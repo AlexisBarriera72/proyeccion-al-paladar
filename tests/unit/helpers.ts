@@ -70,7 +70,7 @@ export function freshDb(): TestD1 {
   // Confirmable sessions.
   session(db, 'ses-conf', {});
   session(db, 'ses-conf2', {startsAt: SHOW + 7 * DAY});
-  session(db, 'ses-pre', {price: 2500, policy: 'pol-prepay'});
+  session(db, 'ses-pre', {price: 2500, policy: 'pol-prepay', startsAt: SHOW + 2 * DAY});
   session(db, 'ses-pricier', {price: 3000, policy: 'pol-prepay', startsAt: SHOW + 14 * DAY});
   session(db, 'ses-past', {startsAt: NOW - DAY});
   return db;
