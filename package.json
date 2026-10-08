@@ -1,0 +1,52 @@
+{
+  "name": "proyeccion-al-paladar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private pitch: calendar and group reservations for Proyección al Paladar (cine gastronómico, Aguada, PR). React + Tailwind v4 + Motion on a Cloudflare Worker with D1.",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test --disable-warning=ExperimentalWarning \"tests/unit/*.test.ts\"",
+    "test:e2e": "npm run build && playwright test",
+    "format": "prettier --write .",
+    "cf": "node scripts/cf.mjs",
+    "photos": "node scripts/photos.mjs",
+    "fonts": "node scripts/fonts.mjs",
+    "launch-check": "node scripts/launch-check.mjs"
+  },
+  "dependencies": {
+    "@date-fns/tz": "1.5.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "jose": "6.2.12",
+    "lucide-react": "1.47.0",
+    "motion": "13.4.2",
+    "radix-ui": "1.6.7",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwind-merge": "3.7.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@cloudflare/workers-types": "5.20260923.1",
+    "@fontsource-variable/inter": "5.3.0",
+    "@playwright/test": "1.56.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "22.20.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "prettier": "3.9.9",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3",
+    "vite": "8.3.0",
+    "wrangler": "4.137.0"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

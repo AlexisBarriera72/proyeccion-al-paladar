@@ -1,0 +1,121 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // The top level is deliberately NOT deployable: no bindings, and APP_ENV "unselected"
+  // makes the Worker answer 503 to everything. Every command names its environment
+  // through scripts/cf.mjs (local, demo or production). Bindings are not inherited by
+  // named environments, so each one declares its own below.
+  "name": "pap-unselected",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-15",
+  "vars": {"APP_ENV": "unselected"},
+  "workers_dev": false,
+  "preview_urls": false,
+
+  "env": {
+    // Tests and `npm run dev` only. Never deployed (cf.mjs refuses). TEST_AUTH and TEST_CLOCK
+    // are passed with --var by scripts/test-server.mjs; they are never written here.
+    "local": {
+      "name": "pap-local",
+      "vars": {
+        "APP_ENV": "local",
+        "DEMO_MODE": "1",
+        "ACCESS_EVERYWHERE": "0",
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUDS": "",
+      },
+      "assets": {
+        "directory": "./dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": true,
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "pap-local",
+          "database_id": "00000000-0000-4000-8000-000000000001",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "ratelimits": [
+        {"name": "SUBMIT_LIMITER", "namespace_id": "1291", "simple": {"limit": 1000, "period": 60}},
+        {"name": "READ_LIMITER", "namespace_id": "1292", "simple": {"limit": 10000, "period": 60}},
+      ],
+    },
+
+    // The private pitch, in your existing Cloudflare account. Access guards the whole
+    // hostname; the Worker also checks the Access token on every request (assets included).
+    "demo": {
+      "name": "proyeccion-al-paladar-demo",
+      // Replace with your account id before `npm run cf -- demo ...` (cf.mjs refuses this placeholder).
+      "account_id": "00000000000000000000000000000001",
+      "workers_dev": true,
+      "preview_urls": false,
+      "vars": {
+        "APP_ENV": "demo",
+        "DEMO_MODE": "1",
+        "ACCESS_EVERYWHERE": "1",
+        // Set both from the Access application (Zero Trust → Access → Applications).
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUDS": "",
+      },
+      "assets": {
+        "directory": "./dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": true,
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "pap-demo",
+          // Replace with the id printed by `npx wrangler d1 create pap-demo`.
+          "database_id": "00000000-0000-4000-8000-000000000002",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "ratelimits": [
+        {"name": "SUBMIT_LIMITER", "namespace_id": "1201", "simple": {"limit": 10, "period": 60}},
+        {"name": "READ_LIMITER", "namespace_id": "1202", "simple": {"limit": 300, "period": 60}},
+      ],
+      "observability": {"enabled": true},
+    },
+
+    // At launch, in the business's own Cloudflare account. Public pages and the public API
+    // are open; Access guards only /equipo and /api/equipo/*.
+    "production": {
+      "name": "proyeccion-al-paladar",
+      // The business's account id, created at launch (cf.mjs refuses this placeholder).
+      "account_id": "00000000000000000000000000000002",
+      "workers_dev": true,
+      "preview_urls": false,
+      "vars": {
+        "APP_ENV": "production",
+        "DEMO_MODE": "0",
+        "ACCESS_EVERYWHERE": "0",
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUDS": "",
+      },
+      "assets": {
+        "directory": "./dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": ["/api/*", "/funciones/*", "/reservacion/*", "/equipo", "/equipo/*"],
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "pap-live",
+          // Replace with the id printed by `npx wrangler d1 create pap-live` in the business's account.
+          "database_id": "00000000-0000-4000-8000-000000000003",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "ratelimits": [
+        {"name": "SUBMIT_LIMITER", "namespace_id": "1211", "simple": {"limit": 10, "period": 60}},
+        {"name": "READ_LIMITER", "namespace_id": "1212", "simple": {"limit": 300, "period": 60}},
+      ],
+      "observability": {"enabled": true},
+    },
+  },
+}
