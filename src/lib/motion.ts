@@ -1,7 +1,8 @@
 // The brief's motion (research/BUILD_PROMPT.md §0). One spring for structural movement; a
 // short stagger for the page header and panels only; nothing moves under reduced motion.
 import {useReducedMotion, useMotionValue, useSpring, type Variants} from 'motion/react';
-import {useCallback, useEffect, useState, type PointerEvent} from 'react';
+import {useCallback, type PointerEvent} from 'react';
+import {useMediaQuery} from './media.ts';
 
 export const SPRING = {type: 'spring', stiffness: 300, damping: 30} as const;
 
@@ -31,17 +32,14 @@ export function useTap() {
   return useReducedMotion() ? undefined : {scale: 0.98};
 }
 
-const finePointer = () =>
-  typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-
 /**
  * A subtle magnetic pull for the main CTA only: on a fine pointer with hover, at most 3px,
  * springing back on exit. The hit area never moves (the effect is on an inner element).
+ * The pointer check is read during render, so the first mouse move already counts.
  */
 export function useMagnetic(maxShift = 3) {
   const reduce = useReducedMotion();
-  const [enabled, setEnabled] = useState(false);
-  useEffect(() => setEnabled(!reduce && finePointer()), [reduce]);
+  const enabled = useMediaQuery('(hover: hover) and (pointer: fine)') && !reduce;
   const x = useSpring(useMotionValue(0), {stiffness: 300, damping: 30});
   const y = useSpring(useMotionValue(0), {stiffness: 300, damping: 30});
   const onPointerMove = useCallback(

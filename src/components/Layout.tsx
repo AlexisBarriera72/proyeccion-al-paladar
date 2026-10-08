@@ -6,10 +6,13 @@ import {useT} from '../lib/i18n.tsx';
 import {useConfig} from '../lib/config.tsx';
 import {photos} from '../photos.ts';
 
+export const isDemoPage = () => document.documentElement.dataset.demo === '1';
+
 export function DemoBanner() {
   const {t} = useT();
   const config = useConfig();
-  if (!config?.demo) return null;
+  // The Worker marks demo HTML, so the banner is there from the first paint (no late shift).
+  if (!(config ? config.demo : isDemoPage())) return null;
   return (
     <div
       role="note"
@@ -26,6 +29,8 @@ export function SiteHeader() {
   const logo = photos.logo;
   return (
     <header className="border-b border-border/70 bg-surface">
+      {/* Inside the banner landmark, so every line of the page belongs to a landmark. */}
+      <DemoBanner />
       <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-6 lg:px-8">
         <Link
           to="/"
@@ -96,7 +101,6 @@ export function PageFrame({children}: {children: ReactNode}) {
       >
         {t('app.skip')}
       </a>
-      <DemoBanner />
       <SiteHeader />
       <main
         id="main"

@@ -90,6 +90,8 @@ export function SessionDetail({
   const [shared, setShared] = useState<string | null>(null);
   const magnetic = useMagnetic(3);
   const Heading = variant === 'page' ? 'h1' : 'h2';
+  // One level below the title: h2 under the page's h1, h3 under the panel's h2.
+  const Sub = variant === 'page' ? 'h2' : 'h3';
   const instagram = config?.instagramUrl ?? 'https://www.instagram.com/proyeccionalpaladarpr/';
 
   const share = async () => {
@@ -219,9 +221,9 @@ export function SessionDetail({
 
       {session.inclusions.es.length ? (
         <section aria-labelledby={`includes-${session.id}`} className="space-y-2">
-          <h3 id={`includes-${session.id}`} className="text-sm font-semibold leading-5 text-ink">
+          <Sub id={`includes-${session.id}`} className="text-sm font-semibold leading-5 text-ink">
             {t('detail.includes')}
-          </h3>
+          </Sub>
           <ul
             className="list-disc space-y-1 pl-5 text-base leading-6 text-ink"
             lang={lang === 'en' && session.inclusions.en ? 'en' : 'es'}
@@ -235,9 +237,9 @@ export function SessionDetail({
       ) : null}
 
       <section aria-labelledby={`terms-${session.id}`} className="space-y-2">
-        <h3 id={`terms-${session.id}`} className="text-sm font-semibold leading-5 text-ink">
+        <Sub id={`terms-${session.id}`} className="text-sm font-semibold leading-5 text-ink">
           {t('detail.terms')}
-        </h3>
+        </Sub>
         <PolicyBlock policy={session.policy} />
       </section>
 

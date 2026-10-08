@@ -6,7 +6,7 @@ import {error, withSecurityHeaders, type HeaderOptions} from './http.ts';
 import {handlePublic} from './public-api.ts';
 import {handleStaff} from './staff-api.ts';
 import {publicSession} from './views.ts';
-import {withSessionMeta} from './meta.ts';
+import {withDemoMark, withSessionMeta} from './meta.ts';
 
 const text = (body: string, status: number) =>
   new Response(body, {status, headers: {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store'}});
@@ -19,9 +19,15 @@ const page = (title: string, body: string, status: number) =>
   );
 
 /** The SPA's index.html (the client router takes over). */
+/** HTML and assets from dist/; demo HTML is marked so the page knows before any API call. */
+async function asset(env: Env, request: Request): Promise<Response> {
+  const response = await env.ASSETS!.fetch(request);
+  return env.DEMO_MODE === '1' ? withDemoMark(response) : response;
+}
+
 async function shell(env: Env, request: Request): Promise<Response> {
   const url = new URL('/', request.url);
-  return env.ASSETS!.fetch(new Request(url, {headers: request.headers}));
+  return asset(env, new Request(url, {headers: request.headers}));
 }
 
 async function limited(binding: Env['SUBMIT_LIMITER'], request: Request): Promise<boolean> {
@@ -87,7 +93,7 @@ export default {
         const html = await shell(env, request);
         return secure(session ? withSessionMeta(html, session, url.href) : html);
       }
-      return secure(await env.ASSETS!.fetch(request));
+      return secure(await asset(env, request));
     } catch (failure) {
       console.error(failure);
       return secure(error('server_error', 500), privateOptions);

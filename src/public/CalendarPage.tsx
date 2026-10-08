@@ -360,8 +360,10 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
   }
 
   // Phones: the month on its own row, then Hoy and the view switch, then the filter.
+  // Computers: one row. The filter (only with more than one experience) appears after the
+  // dates load, so it sits at the row's end and never pushes the calendar down.
   const controls = (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
       <div className="flex w-full items-center justify-between gap-1 sm:w-auto sm:justify-start">
         <Button
           variant="ghost"
@@ -414,7 +416,7 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
         ]}
       />
       {experiences.length > 1 ? (
-        <label className="relative flex w-full sm:w-auto">
+        <label className="relative flex w-full sm:ml-auto sm:w-48">
           <span className="sr-only">{t('cal.filter')}</span>
           {/* A native select: light for the first visit and familiar on phones. */}
           <select
@@ -423,7 +425,7 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
               setExperience(event.target.value);
               setDay(null);
             }}
-            className="min-h-11 w-full appearance-none rounded-2xl border border-stone-500 bg-surface py-2 pl-4 pr-10 text-sm font-medium leading-5 text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:max-w-56"
+            className="min-h-11 w-full appearance-none rounded-2xl border border-stone-500 bg-surface py-2 pl-4 pr-10 text-sm font-medium leading-5 text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             <option value="all">{`${t('cal.filter')}: ${t('cal.filterAll')}`}</option>
             {experiences.map(option => (

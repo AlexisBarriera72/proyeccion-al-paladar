@@ -274,3 +274,11 @@ test('the public session view never offers what the server would refuse', async 
   assert.equal(inquiry.session.venue, null);
   assert.equal(inquiry.session.price.status, 'unset');
 });
+
+test('demo HTML is marked before any API call, so the banner never appears late', async () => {
+  const demo = await call(env(), '/politicas/');
+  assert.match(await demo.response.text(), /<html data-demo="1">/);
+  assert.equal(demo.response.headers.get('content-length'), null);
+  const live = await call(env({DEMO_MODE: '0'}), '/politicas/');
+  assert.doesNotMatch(await live.response.text(), /data-demo/);
+});

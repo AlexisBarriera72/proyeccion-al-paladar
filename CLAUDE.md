@@ -27,15 +27,21 @@ npm run typecheck
 npm run test:unit
 npx prettier --check .
 npm run build
-npm run test:e2e   # Playwright against `wrangler dev --env local` with a fresh local D1
+npx playwright test --project=desktop --project=mobile   # the built site on a fresh local D1, port 8788
+npm run test:release                                       # wrangler dev on a fresh local D1, port 8789
+npm run launch-check                                       # fails until launch, on purpose
 ```
+
+- The browser tests serve `dist/`, so build first.
+- `launch-check` exits 1 until launch. That is expected while it lists only the known launch blockers: photo permission, `noindex`, production placeholders and production Access settings (README, "Launch checklist"). Anything else it lists is a failure.
 
 Look at the pages at 1440×900, 390×844 and 360×640, in Spanish and English, and with reduced motion.
 
 ## Reporting
 
-- Report what actually ran on the commit being reported. Write "Local checks passed." only when every check above passed on it; otherwise name each check that failed or didn't run, and why.
-- State hosted CI's status as it is when you report.
+- Report what actually ran on the commit being reported. Write "Local checks passed." only when every check above passed on it, with `launch-check` failing only on its known launch blockers. Otherwise name each check that failed or didn't run, and why.
+- Say that `launch-check` fails by design, and how many problems it listed.
+- State hosted CI's status as it is when you report, not as a fixed sentence. For example, while the repository has no workflows: "There is no hosted CI yet."
 
 ## Branches
 

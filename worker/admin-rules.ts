@@ -373,6 +373,13 @@ export function setPolicyState(p: {
             when: raw(`(pv.applies_to IS NOT NULL AND pv.full_payment IS NOT NULL AND pv.refund_fraction_bp IS NOT NULL
               AND pv.cutoff_rule IS NOT NULL AND pv.cutoff_rule <> '' AND pv.effective_from IS NOT NULL)`),
           },
+          // Payment in full means a guest can pay and then find no seats. The owners must
+          // approve what happens then (refund or another date) before such terms can apply.
+          {
+            code: 'exception_process_unapproved',
+            when: raw(`(pv.full_payment = 0 OR EXISTS (SELECT 1 FROM settings
+              WHERE key = 'exception_process_approved' AND value = '1'))`),
+          },
         ]
       : [version(p.expectedVersion, 'pv'), {code: 'policy_not_approved', when: raw(`pv.state = 'approved'`)}];
   const approvedFields =
@@ -456,20 +463,23 @@ export function saveStaffMember(p: {
  * demo or local database (a trigger aborts it elsewhere), and every delete requires it.
  * Staff members, the audit log and this mutation's own ledger row stay.
  */
+/** What a demo reset empties, children first. Staff members and the audit history stay. */
+export const DEMO_RESET_TABLES = [
+  'payments',
+  'term_acceptances',
+  'term_proposals',
+  'booking_requests',
+  'bookings',
+  'sessions',
+  'experiences',
+  'venues',
+  'policy_versions',
+  'settings',
+] as const;
+
 export function demoReset(p: {seed: SeedRow[]; mutationId: string; now: number; actor: string}): ActionSpec {
   const locked = raw('EXISTS (SELECT 1 FROM reset_lock)');
-  const tables = [
-    'payments',
-    'term_acceptances',
-    'term_proposals',
-    'booking_requests',
-    'bookings',
-    'sessions',
-    'experiences',
-    'venues',
-    'policy_versions',
-    'settings',
-  ];
+  const tables = DEMO_RESET_TABLES;
   const snapshot = raw(
     `json_object('bookings', (SELECT COUNT(*) FROM bookings), 'sessions', (SELECT COUNT(*) FROM sessions))`,
   );

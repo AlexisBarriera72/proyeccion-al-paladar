@@ -494,12 +494,18 @@ test('a guest withdraws a request without money, but not once a payment is recor
   assert.equal(booking(db, b.input.bookingId).status, 'pending_payment');
 });
 
-test('an unpublished or past session takes no new bookings', async () => {
+test('an unpublished, cancelled, archived or past session takes no new bookings or requests', async () => {
   const db = freshDb();
   session(db, 'ses-draft', {state: 'draft'});
-  for (const id of ['ses-draft', 'ses-past']) {
+  session(db, 'ses-cancelled', {state: 'cancelled'});
+  session(db, 'ses-archived', {state: 'archived'});
+  session(db, 'ses-cancelled-inq', {state: 'cancelled', mode: 'inquiry', venue: null, policy: null});
+  for (const id of ['ses-draft', 'ses-cancelled', 'ses-archived', 'ses-past']) {
     const r = await reserve(db, id, 2);
     assert.equal(r.result.kind, 'rejected', id);
+    if (id !== 'ses-past') assert.equal(r.result.kind === 'rejected' && r.result.reason, 'session_not_open', id);
   }
+  const request = await inquire(db, 'ses-cancelled-inq', 2);
+  assert.equal(request.result.kind === 'rejected' && request.result.reason, 'session_not_open');
   assert.equal(count(db, 'bookings'), 0);
 });

@@ -1,6 +1,7 @@
 // Modo demostración data. Used by `npm run cf -- demo seed` (written to a SQL file) and by the
 // owner's "Restablecer demostración" (inside one ledger batch). Dates are relative to `now`, so
-// the demo always shows upcoming dates. Every row is marked synthetic; titles say DEMO.
+// the demo always shows upcoming dates. Invented rows are marked synthetic and say DEMO. The
+// announced policy is their real post, quoted as a draft, so it is not marked synthetic.
 //
 // Set A is modeled on their advertised programming: inquiry only, no venue, no price, and the
 // announced policy shown as announced. Set B is synthetic with complete terms, so the unchanged
@@ -41,10 +42,16 @@ export function demoSeed(now: number): SeedRow[] {
   const add = (table: string, values: Record<string, SqlValue>) => rows.push({table, values});
   const stamp = {created_at: now, updated_at: now, updated_by: SYSTEM};
 
+  // The DEMO prepay policy below is approved, so the demo has an approved process for payments
+  // without seats too (the rule a real approval goes through). It is a test process, labeled.
   for (const [key, value] of [
     ['confirmed_bookings_enabled', '1'],
     ['required_contact', 'either'],
-    ['exception_process_approved', '0'],
+    ['exception_process_approved', '1'],
+    [
+      'exception_process_text',
+      'DEMO · Proceso de prueba: ofrecer otra fecha o devolver el pago completo. Los dueños aprueban el proceso real.',
+    ],
   ]) {
     add('settings', {key, value, updated_at: now, updated_by: SYSTEM});
   }

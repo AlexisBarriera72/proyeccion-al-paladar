@@ -824,6 +824,7 @@ export function BookingPage({id}: {id: string}) {
                   </Card>
                 ) : null}
                 <Card title={t('bk.history')}>
+                  {data.audit.length ? null : <p className="text-sm leading-5 text-ink">{t('hist.empty')}</p>}
                   <ul className="space-y-2 text-sm leading-5 text-ink">
                     {data.audit.map(event => (
                       <li key={event.mutation_id}>

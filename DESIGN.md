@@ -6,15 +6,15 @@ How the site looks, moves and speaks. The brief is `research/BUILD_PROMPT.md` §
 
 The brief was written for a "Sites" builder. These changes are deliberate; everything else in the brief stands.
 
-| Brief                       | Here                                                                                              | Why                                                                       |
-| --------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Sites hosting and storage   | One Cloudflare Worker serving the built site, plus D1                                             | Reuses the account and tooling behind Party Dips                          |
-| Sites authentication        | Cloudflare Access (one-time PIN), verified again inside the Worker; roles in D1                   | No passwords to store; the Worker never trusts the edge alone             |
-| Framer Motion               | The same library under its current package name, `motion` (`motion/react`)                        | Framer Motion is published as `motion` now                                |
-| Modo demostración           | Its own Cloudflare environment and database (`env.demo`, `pap-demo`)                              | Demo rows can never reach live data                                       |
-| shadcn/ui calendar          | A custom month grid for guests; native date and time inputs for staff                             | Sessions are shown as cards in the grid, which a date picker can't do     |
-| A view for readiness checks | Shared SQL fragments in `worker/rules.ts`                                                         | The checks take parameters (now, party size, own seats) that a view can't |
-| A memory store for tests    | The same SQL run on Node's built-in SQLite through a small D1-shaped adapter (`tests/unit/d1.ts`) | Tests prove the real statements instead of a second implementation        |
+| Brief                       | Here                                                                                              | Why                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Sites hosting and storage   | One Cloudflare Worker serving the built site, plus D1                                             | The demo runs in the existing Cloudflare account; one deploy serves pages, API and data |
+| Sites authentication        | Cloudflare Access (one-time PIN), verified again inside the Worker; roles in D1                   | No passwords to store; the Worker never trusts the edge alone                           |
+| Framer Motion               | The same library under its current package name, `motion` (`motion/react`)                        | Framer Motion is published as `motion` now                                              |
+| Modo demostración           | Its own Cloudflare environment and database (`env.demo`, `pap-demo`)                              | Demo rows can never reach live data                                                     |
+| shadcn/ui calendar          | A custom month grid for guests; native date and time inputs for staff                             | Sessions are shown as cards in the grid, which a date picker can't do                   |
+| A view for readiness checks | Shared SQL fragments in `worker/rules.ts`                                                         | The checks take parameters (now, party size, own seats) that a view can't               |
+| A memory store for tests    | The same SQL run on Node's built-in SQLite through a small D1-shaped adapter (`tests/unit/d1.ts`) | Tests prove the real statements instead of a second implementation                      |
 
 ## Tokens
 
@@ -57,6 +57,31 @@ These live in `src/components/ui/` and `src/lib/styles.ts` so pages don't repeat
 - **Phones:** the agenda (a dated list) first, with a month picker and a switch to the grid.
 - Before scrolling, at 390×844 and 360×640: the business name, the "Calendario" heading, the month controls, and the first session with its action (or the empty state).
 - Empty state when nothing is published: "Aún no hay fechas publicadas. Consulta las próximas experiencias en Instagram." with a link to the official profile only.
+- **The demo banner is there from the first paint.** In the demo the Worker marks the page's HTML (`<html data-demo="1">`), so the banner never arrives after the dates and pushes the page down.
+
+## Calendar controls
+
+- **Phones, in three rows:**
+  1. The month, with "Mes anterior" and "Mes siguiente" on either side.
+  2. "Hoy" and the Calendario/Lista switch.
+  3. The experience filter. It appears only when the dates loaded include more than one experience.
+- **Phones open on Lista,** the agenda. Their Calendario view is a compact month: days with sessions are buttons, and choosing one filters the agenda below. "Ver todo el mes" clears the choice. A session opens on its own page.
+- **Computers:** the same controls on one row, with the filter (12rem) at its end. The filter appears after the dates load, and because the row has room for it, it doesn't push the calendar down; `tests/e2e/design.spec.ts` holds layout shift to 0.02 or less.
+- "Mes anterior" is off on the current month. The month name is announced politely when it changes.
+- The chosen view lasts for the browser tab (session storage), and nothing depends on it.
+
+## Staff workspace
+
+- `/equipo/` is its own chunk, loaded only there, with the same tokens, type and actions as the guest pages.
+- **Header:** "Proyección al Paladar · Equipo", who is signed in and their role, "Ver el sitio" and the language. In the demo, a dark band at the top says "Demostración: datos de prueba. Nada aquí es real."
+- **Sections**, as a row of links that wraps on phones: Calendario, Esta noche, Sesiones, Reservaciones, Excepciones, Pedidos, Experiencias, Configuración, Historial. The current one is filled with ink.
+- **Esta noche** is a check-in list sized for a phone: today's confirmed reservations and how many people have arrived.
+- **Readiness:** a session's checklist ("Lista para publicar", "Lista para confirmar en línea") shows the server's own checks, each marked "Listo" or "Falta".
+- **Owner-only controls** stay visible but disabled for the Equipo role, with "Solo un dueño puede cambiar la configuración." The server refuses them anyway.
+- **Dialogs** return focus to the button that opened them when they close.
+- **Refusals** name what failed and what to do, from the server's reason codes. A failed exception resolution says "No se pudo resolver. La excepción sigue igual."
+- "Restablecer demostración" exists only in the demo, for owners. Its dialog says what it deletes, that it recreates the DEMO data, and that the history and the team stay.
+- Dense rows and tables change color or border only, as in [Motion](#motion).
 
 ## Motion
 
@@ -108,13 +133,15 @@ The site says only what happened.
 
 ## Photos
 
-| Slot         | Source          | Shows                                         | Caption                                                                          |
-| ------------ | --------------- | --------------------------------------------- | -------------------------------------------------------------------------------- |
-| `room`       | A18 (1200×1600) | An earlier event room; people; projected film | "Evento anterior. Fuente: @proyeccionalpaladarpr. Permiso de uso por confirmar." |
-| `table-food` | A27 (1440×1920) | Table and food; projected film                | same                                                                             |
-| `food`       | A25 (640×1136)  | Food at a screening                           | same                                                                             |
-| `logo`       | A01 (150×150)   | Their logo                                    | none; shown at 72 CSS px or less                                                 |
+| Slot         | Source          | Served as                                    | Shows                                                                                   | Caption                                                                          |
+| ------------ | --------------- | -------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `room`       | A18 (1200×1600) | The whole frame, 3:4                         | An earlier event room; people; projected film                                           | "Evento anterior. Fuente: @proyeccionalpaladarpr. Permiso de uso por confirmar." |
+| `table-food` | A27 (1440×1920) | 4:3, from the bottom of the frame, 1440×1080 | Table, food and balloons. The crop leaves out the projected film and the screen's brand | same                                                                             |
+| `food`       | A25 (640×1136)  | 4:3, 640×480                                 | Food at a screening                                                                     | same                                                                             |
+| `logo`       | A01 (150×150)   | The whole frame                              | Their logo                                                                              | none; shown at 72 CSS px or less                                                 |
 
+- **Where they appear.** `room` leads the introduction: the side panel on computers, below the calendar on phones. `table-food` and `food` appear in the session details of the experiences that use them (the panel or the session's page). Staff choose an experience's photo in Experiencias; the demo gives `table-food` to Ratatouille and `food` to Shrek.
+- **How they are made.** `npm run photos` (`scripts/photos.mjs`) sets each slot's crop shape and vertical focus. `table-food` uses focus 1, the bottom edge. It writes `src/photos.ts`, which records for each photo its source, whether people or film content are visible (`table-food`: `filmVisible: false`), and `reuse: 'not_verified'`.
 - Room photos never stand in for the current Aguada venue.
 - Permission is unverified for every use, the pitch included. `npm run launch-check` blocks a public launch while any served photo lacks approval.
 - No file is wider than its original. No posters, character art, customer portraits or evidence screenshots are served.

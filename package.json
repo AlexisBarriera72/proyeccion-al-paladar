@@ -5,17 +5,18 @@
   "type": "module",
   "description": "Private pitch: calendar and group reservations for Proyección al Paladar (cine gastronómico, Aguada, PR). React + Tailwind v4 + Motion on a Cloudflare Worker with D1.",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "node --disable-warning=ExperimentalWarning scripts/dev.mjs",
     "build": "vite build",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.node.json",
-    "test": "npm run test:unit && npm run test:e2e",
+    "test": "npm run test:unit && npm run test:e2e && npm run test:release",
     "test:unit": "node --test --disable-warning=ExperimentalWarning \"tests/unit/*.test.ts\"",
     "test:e2e": "npm run build && playwright test",
     "format": "prettier --write .",
-    "cf": "node scripts/cf.mjs",
+    "cf": "node --disable-warning=ExperimentalWarning scripts/cf.mjs",
     "photos": "node scripts/photos.mjs",
     "fonts": "node scripts/fonts.mjs",
-    "launch-check": "node scripts/launch-check.mjs"
+    "launch-check": "node --disable-warning=ExperimentalWarning scripts/launch-check.mjs",
+    "test:release": "node --disable-warning=ExperimentalWarning scripts/release-test.mjs"
   },
   "dependencies": {
     "@date-fns/tz": "1.5.0",
@@ -40,6 +41,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
+    "playwright-core": "1.56.1",
     "prettier": "3.9.9",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",

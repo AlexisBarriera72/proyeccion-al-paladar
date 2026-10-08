@@ -4,6 +4,7 @@ import {useEffect, type ReactNode} from 'react';
 import {Link, useLocation} from '../lib/router.tsx';
 import {cn} from '../lib/cn.ts';
 import {pageTitle} from '../lib/styles.ts';
+import {isDemoPage} from '../components/Layout.tsx';
 import {useQuery} from './api.ts';
 import {QueryView, useStaffT} from './ui.tsx';
 import {CalendarView, SessionPage, SessionsList} from './Sessions.tsx';
@@ -41,12 +42,12 @@ function Frame({me, children}: {me: Me | null; children: ReactNode}) {
       >
         {t('app.skip')}
       </a>
-      {me?.demo ? (
-        <div role="note" className="bg-ink px-4 py-2 text-center text-sm font-medium leading-5 text-white">
-          {t('staff.demo')}
-        </div>
-      ) : null}
       <header className="border-b border-border/70 bg-surface">
+        {(me ? me.demo : isDemoPage()) ? (
+          <div role="note" className="bg-ink px-4 py-2 text-center text-sm font-medium leading-5 text-white">
+            {t('staff.demo')}
+          </div>
+        ) : null}
         <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <div>
             <p className="text-base font-semibold leading-6 text-ink">

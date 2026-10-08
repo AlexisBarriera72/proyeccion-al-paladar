@@ -6,7 +6,7 @@ import {cva, type VariantProps} from 'class-variance-authority';
 import {cn} from '../../lib/cn.ts';
 import {useTap} from '../../lib/motion.ts';
 
-export const buttonVariants = cva(
+const variants = cva(
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium leading-5 ' +
     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ' +
     'disabled:cursor-not-allowed disabled:opacity-60 [&_svg]:size-4 [&_svg]:shrink-0',
@@ -25,6 +25,9 @@ export const buttonVariants = cva(
     defaultVariants: {variant: 'secondary', width: 'auto'},
   },
 );
+
+/** The classes for a variant, merged, so a variant's padding replaces the base padding. */
+export const buttonVariants = (props?: VariantProps<typeof variants>) => cn(variants(props));
 
 type Props = Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,

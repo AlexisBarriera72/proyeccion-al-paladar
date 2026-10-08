@@ -1,9 +1,10 @@
-// Dialogs and sheets on Radix (focus trap, Escape, focus return), moved by the shared spring.
-// A sheet rises from the bottom on phones and slides in from the right on wide screens.
+// Dialogs and sheets on Radix (focus trap, Escape), moved by the shared spring. A sheet rises
+// from the bottom on phones and slides in from the right on wide screens. Our dialogs open from
+// ordinary buttons (no Radix Trigger), so focus goes back to whatever was focused on open.
 import {Dialog as D} from 'radix-ui';
 import {AnimatePresence, motion, useReducedMotion} from 'motion/react';
 import {X} from 'lucide-react';
-import type {ReactNode} from 'react';
+import {useLayoutEffect, useRef, type ReactNode} from 'react';
 import {cn} from '../../lib/cn.ts';
 import {SPRING} from '../../lib/motion.ts';
 
@@ -30,6 +31,13 @@ export function Dialog({
 }: Props) {
   const reduce = useReducedMotion();
   const sheet = kind === 'sheet';
+  const returnTo = useRef<HTMLElement | null>(null);
+  // Runs before Radix moves focus into the dialog, so it records the opener.
+  useLayoutEffect(() => {
+    if (open && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+      returnTo.current = document.activeElement;
+    }
+  }, [open]);
   const enter = reduce ? {opacity: 1} : sheet ? {opacity: 1, y: 0} : {opacity: 1, y: 0, scale: 1};
   const leave = reduce ? {opacity: 0} : sheet ? {opacity: 0, y: 40} : {opacity: 0, y: 12, scale: 0.98};
   return (
@@ -46,7 +54,14 @@ export function Dialog({
                 transition={reduce ? {duration: 0} : {duration: 0.15}}
               />
             </D.Overlay>
-            <D.Content asChild forceMount>
+            <D.Content
+              asChild
+              forceMount
+              onCloseAutoFocus={event => {
+                event.preventDefault();
+                if (returnTo.current?.isConnected) returnTo.current.focus();
+              }}
+            >
               <motion.div
                 initial={leave}
                 animate={enter}

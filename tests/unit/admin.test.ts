@@ -259,6 +259,18 @@ test('a policy is approved only with every rule set, and then never changes', as
     mid =>
       savePolicyDraft({id: 'pol-new', fields: complete, expectedVersion: 1, actor: OWNER, mutationId: mid, now: NOW}),
   );
+  // Payment in full: refused until the owners approve the process for payments without seats.
+  const unprocessed = await act(
+    db,
+    {action: 'policy_approved', targetType: 'policy', targetId: 'pol-new', expectedVersion: 2},
+    mid => setPolicyState({id: 'pol-new', to: 'approved', expectedVersion: 2, actor: OWNER, mutationId: mid, now: NOW}),
+  );
+  assert.equal(unprocessed.kind === 'rejected' && unprocessed.reason, 'exception_process_unapproved');
+  assert.equal(db.get<{state: string}>(`SELECT state FROM policy_versions WHERE id = 'pol-new'`)!.state, 'draft');
+  db.run(
+    `INSERT INTO settings (key, value, updated_at, updated_by) VALUES ('exception_process_approved', '1', ?, 'test')`,
+    NOW,
+  );
   const approved = await act(
     db,
     {action: 'policy_approved', targetType: 'policy', targetId: 'pol-new', expectedVersion: 2},

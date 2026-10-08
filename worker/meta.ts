@@ -46,3 +46,20 @@ export function withSessionMeta(response: Response, session: PublicSession, page
     .on('meta[property="og:url"]', content(pageUrl))
     .transform(response);
 }
+
+/**
+ * Demo pages say so from the first paint (`<html data-demo="1">`), so the demo banner never
+ * appears late and pushes the page down. The shell is small; plain text keeps this testable
+ * outside the Workers runtime.
+ */
+export async function withDemoMark(response: Response): Promise<Response> {
+  if (response.status !== 200 || !(response.headers.get('content-type') ?? '').includes('text/html')) return response;
+  const html = await response.text();
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  return new Response(html.replace(/<html\b(?![^>]*data-demo)/i, '<html data-demo="1"'), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
