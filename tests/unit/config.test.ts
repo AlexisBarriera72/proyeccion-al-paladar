@@ -3,7 +3,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {readWrangler} from './jsonc.ts';
+import {readWrangler} from '../../scripts/lib/wrangler-config.ts';
 import {CSP} from '../../worker/http.ts';
 
 const config = readWrangler();

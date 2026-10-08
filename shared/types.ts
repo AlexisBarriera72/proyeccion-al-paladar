@@ -46,6 +46,7 @@ export interface PublicVenue {
 
 export interface PublicSession {
   id: string;
+  experienceId: string;
   title: Localized;
   description: Localized | null;
   inclusions: {es: string[]; en: string[] | null};

@@ -230,10 +230,21 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
             OR json_extract(after_json, '$.id') = ${id} ORDER BY at, rowid`,
         ),
       ]);
-      const locked = row.accepted_policy_version_id
-        ? toPublicPolicy(
-            await first(db, sql`SELECT * FROM policy_versions WHERE id = ${row.accepted_policy_version_id as string}`),
+      const lockedRow = row.accepted_policy_version_id
+        ? await first<Record<string, unknown>>(
+            db,
+            sql`SELECT * FROM policy_versions WHERE id = ${row.accepted_policy_version_id as string}`,
           )
+        : null;
+      const locked = lockedRow ? toPublicPolicy(lockedRow as never) : null;
+      // The rules staff need to calculate a refund (never shown to guests as issued).
+      const lockedRules = lockedRow
+        ? {
+            state: lockedRow.state,
+            fullPayment: lockedRow.full_payment,
+            refundFractionBp: lockedRow.refund_fraction_bp,
+            cutoffRule: lockedRow.cutoff_rule,
+          }
         : null;
       return json({
         booking: row,
@@ -244,6 +255,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
         requests,
         audit,
         lockedPolicy: locked,
+        lockedRules,
       });
     }
 

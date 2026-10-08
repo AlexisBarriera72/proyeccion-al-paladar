@@ -6,15 +6,15 @@ How the site looks, moves and speaks. The brief is `research/BUILD_PROMPT.md` §
 
 The brief was written for a "Sites" builder. These changes are deliberate; everything else in the brief stands.
 
-| Brief                       | Here                                                                                                                          | Why                                                                                     |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Sites hosting and storage   | One Cloudflare Worker serving the built site, plus D1                                                                         | Reuses the account and tooling behind Party Dips                                        |
-| Sites authentication        | Cloudflare Access (one-time PIN), verified again inside the Worker; roles in D1                                               | No passwords to store; the Worker never trusts the edge alone                           |
-| Framer Motion               | The same library under its current package name, `motion` (`motion/react`)                                                    | Framer Motion is published as `motion` now                                              |
-| Modo demostración           | Its own Cloudflare environment and database (`env.demo`, `pap-demo`)                                                          | Demo rows can never reach live data                                                     |
-| shadcn/ui calendar          | A custom month grid for guests; native date and time inputs for staff                                                         | Sessions are shown as cards in the grid, which a date picker can't do                   |
-| A view for readiness checks | Shared SQL fragments in `worker/rules.ts`                                                                                     | The checks take parameters (now, party size, own seats) that a view can't               |
-| A memory store for tests    | The same SQL run on Node's built-in SQLite through a small D1-shaped adapter (`tests/unit/d1.ts`)                             | Tests prove the real statements instead of a second implementation                      |
+| Brief                       | Here                                                                                              | Why                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Sites hosting and storage   | One Cloudflare Worker serving the built site, plus D1                                             | Reuses the account and tooling behind Party Dips                          |
+| Sites authentication        | Cloudflare Access (one-time PIN), verified again inside the Worker; roles in D1                   | No passwords to store; the Worker never trusts the edge alone             |
+| Framer Motion               | The same library under its current package name, `motion` (`motion/react`)                        | Framer Motion is published as `motion` now                                |
+| Modo demostración           | Its own Cloudflare environment and database (`env.demo`, `pap-demo`)                              | Demo rows can never reach live data                                       |
+| shadcn/ui calendar          | A custom month grid for guests; native date and time inputs for staff                             | Sessions are shown as cards in the grid, which a date picker can't do     |
+| A view for readiness checks | Shared SQL fragments in `worker/rules.ts`                                                         | The checks take parameters (now, party size, own seats) that a view can't |
+| A memory store for tests    | The same SQL run on Node's built-in SQLite through a small D1-shaped adapter (`tests/unit/d1.ts`) | Tests prove the real statements instead of a second implementation        |
 
 ## Tokens
 
@@ -38,16 +38,16 @@ Defined in `src/styles.css` with Tailwind v4 `@theme`, exactly as the brief give
 
 ## Type and layout classes
 
-| Element               | Classes                                                                                          |
-| --------------------- | ------------------------------------------------------------------------------------------------ |
-| Page title            | `text-[32px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.08] text-ink`              |
-| Session/detail title  | `text-[24px] font-medium tracking-[-0.025em] leading-[1.2] text-ink`                             |
-| Body / helper         | `text-base leading-6 text-ink` / `text-sm leading-5 text-muted`                                  |
-| Dates and times       | `tabular-nums tracking-[-0.01em]`                                                                |
-| Customer workspace    | `grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8`                             |
-| Main panel            | `rounded-2xl border border-border/50 bg-surface shadow-[0_1px_2px_rgba(28,25,23,0.04),0_8px_24px_rgba(28,25,23,0.06)]` plus `p-4 sm:p-6` |
-| Primary action        | `min-h-11 rounded-2xl bg-accent px-4 py-3 text-sm font-medium leading-5 text-white hover:bg-accent-hover` + focus outline |
-| Secondary action      | `min-h-11 rounded-2xl border border-stone-400 bg-surface px-4 py-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100` + focus outline |
+| Element              | Classes                                                                                                                                       |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page title           | `text-[32px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.08] text-ink`                                                           |
+| Session/detail title | `text-[24px] font-medium tracking-[-0.025em] leading-[1.2] text-ink`                                                                          |
+| Body / helper        | `text-base leading-6 text-ink` / `text-sm leading-5 text-muted`                                                                               |
+| Dates and times      | `tabular-nums tracking-[-0.01em]`                                                                                                             |
+| Customer workspace   | `grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8`                                                                          |
+| Main panel           | `rounded-2xl border border-border/50 bg-surface shadow-[0_1px_2px_rgba(28,25,23,0.04),0_8px_24px_rgba(28,25,23,0.06)]` plus `p-4 sm:p-6`      |
+| Primary action       | `min-h-11 rounded-2xl bg-accent px-4 py-3 text-sm font-medium leading-5 text-white hover:bg-accent-hover` + focus outline                     |
+| Secondary action     | `min-h-11 rounded-2xl border border-stone-400 bg-surface px-4 py-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100` + focus outline |
 
 These live in `src/components/ui/` and `src/lib/styles.ts` so pages don't repeat them.
 
@@ -71,19 +71,19 @@ These live in `src/components/ui/` and `src/lib/styles.ts` so pages don't repeat
 
 The site says only what happened.
 
-| Moment                          | Copy                                                                            |
-| ------------------------------- | ------------------------------------------------------------------------------- |
-| Inquiry saved                   | "Solicitud recibida. El equipo debe confirmar disponibilidad y condiciones."    |
-| Waiting for payment             | "Solicitud recibida. No reserva plazas hasta que el equipo verifique tu pago."  |
-| Confirmed by the server         | "Reservación confirmada"                                                        |
-| Response lost                   | "No sabemos si llegó tu solicitud. Vuelve a intentarlo; no se duplicará."       |
-| Same request ID, different data | "Ya enviaste esta solicitud con otros datos. Revísala y envíala de nuevo."      |
-| Terms changed                   | "Las condiciones cambiaron. Revísalas antes de continuar."                      |
-| No sender configured            | "No te enviamos ningún mensaje. Guarda este enlace para ver tu solicitud."      |
-| Link replaced                   | "Este enlace ya no es válido. Pide uno nuevo al equipo."                        |
-| Copying worked / failed         | "Mensaje copiado." / "No se pudo copiar. Selecciona el mensaje y cópialo."      |
-| Instagram opened                | "Continúa en Instagram." (never "enviado")                                      |
-| A calculated refund             | "calculado, no emitido" until staff record the refund                           |
+| Moment                          | Copy                                                                           |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| Inquiry saved                   | "Solicitud recibida. El equipo debe confirmar disponibilidad y condiciones."   |
+| Waiting for payment             | "Solicitud recibida. No reserva plazas hasta que el equipo verifique tu pago." |
+| Confirmed by the server         | "Reservación confirmada"                                                       |
+| Response lost                   | "No sabemos si llegó tu solicitud. Vuelve a intentarlo; no se duplicará."      |
+| Same request ID, different data | "Ya enviaste esta solicitud con otros datos. Revísala y envíala de nuevo."     |
+| Terms changed                   | "Las condiciones cambiaron. Revísalas antes de continuar."                     |
+| No sender configured            | "No te enviamos ningún mensaje. Guarda este enlace para ver tu solicitud."     |
+| Link replaced                   | "Este enlace ya no es válido. Pide uno nuevo al equipo."                       |
+| Copying worked / failed         | "Mensaje copiado." / "No se pudo copiar. Selecciona el mensaje y cópialo."     |
+| Instagram opened                | "Continúa en Instagram." (never "enviado")                                     |
+| A calculated refund             | "calculado, no emitido" until staff record the refund                          |
 
 ## Copy rules
 
@@ -95,25 +95,25 @@ The site says only what happened.
 
 ## Claims
 
-| Claim                                                         | Status                                     | Source                    |
-| ------------------------------------------------------------- | ------------------------------------------ | ------------------------- |
-| Name, handle, "Cine gastronómico" in Aguada, DM for dates     | **Verified**                               | Profile bio (E01)         |
-| Ratatouille, Aguadilla, May 2 and May 30, 2026, sold out      | **Verified**                               | Posters A23, A20          |
-| "Cine. Sabores. Emociones."                                   | **Verified** (their wording, to approve)   | Graphic A19               |
-| Shrek dates for September–October, at the new Aguada local    | **Advertised** (posters, not inventory)    | A11, A08, A29, A06, A09   |
-| Shrek offer: 8 platos, 3 bebidas, ambientación, popcorn, agua | **Advertised** (that offer only)           | A28                       |
-| From November 15: full payment; 60% refund with 3 days' notice | **Announced** (applies only if confirmed)  | Policy post A02           |
-| "Los primeros en Puerto Rico"                                 | **Company claim**                          | Profile bio (E01)         |
-| Address, dates, capacity, prices, menus, policy details        | **Unverified** → "Por confirmar"           | Owner questions (README)  |
+| Claim                                                          | Status                                    | Source                   |
+| -------------------------------------------------------------- | ----------------------------------------- | ------------------------ |
+| Name, handle, "Cine gastronómico" in Aguada, DM for dates      | **Verified**                              | Profile bio (E01)        |
+| Ratatouille, Aguadilla, May 2 and May 30, 2026, sold out       | **Verified**                              | Posters A23, A20         |
+| "Cine. Sabores. Emociones."                                    | **Verified** (their wording, to approve)  | Graphic A19              |
+| Shrek dates for September–October, at the new Aguada local     | **Advertised** (posters, not inventory)   | A11, A08, A29, A06, A09  |
+| Shrek offer: 8 platos, 3 bebidas, ambientación, popcorn, agua  | **Advertised** (that offer only)          | A28                      |
+| From November 15: full payment; 60% refund with 3 days' notice | **Announced** (applies only if confirmed) | Policy post A02          |
+| "Los primeros en Puerto Rico"                                  | **Company claim**                         | Profile bio (E01)        |
+| Address, dates, capacity, prices, menus, policy details        | **Unverified** → "Por confirmar"          | Owner questions (README) |
 
 ## Photos
 
-| Slot          | Source                     | Shows                                         | Caption                                                                                 |
-| ------------- | -------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `room`        | A18 (1200×1600)            | An earlier event room; people; projected film | "Evento anterior. Fuente: @proyeccionalpaladarpr. Permiso de uso por confirmar."        |
-| `table-food`  | A27 (1440×1920)            | Table and food; projected film                | same                                                                                    |
-| `food`        | A25 (640×1136)             | Food at a screening                           | same                                                                                    |
-| `logo`        | A01 (150×150)              | Their logo                                    | none; shown at 72 CSS px or less                                                        |
+| Slot         | Source          | Shows                                         | Caption                                                                          |
+| ------------ | --------------- | --------------------------------------------- | -------------------------------------------------------------------------------- |
+| `room`       | A18 (1200×1600) | An earlier event room; people; projected film | "Evento anterior. Fuente: @proyeccionalpaladarpr. Permiso de uso por confirmar." |
+| `table-food` | A27 (1440×1920) | Table and food; projected film                | same                                                                             |
+| `food`       | A25 (640×1136)  | Food at a screening                           | same                                                                             |
+| `logo`       | A01 (150×150)   | Their logo                                    | none; shown at 72 CSS px or less                                                 |
 
 - Room photos never stand in for the current Aguada venue.
 - Permission is unverified for every use, the pitch included. `npm run launch-check` blocks a public launch while any served photo lacks approval.

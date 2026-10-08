@@ -17,6 +17,7 @@ import type {
 
 interface SessionRow {
   id: string;
+  experience_id: string;
   starts_at: number | null;
   ends_at: number | null;
   state: SessionState;
@@ -133,6 +134,7 @@ export function toPublicSession(row: SessionRow, now: number, policy: PolicyRow 
 
   return {
     id: row.id,
+    experienceId: row.experience_id,
     title: {es: row.title_es, en: row.title_en},
     description: row.description_es ? {es: row.description_es, en: row.description_en} : null,
     inclusions: {es: lines(row.inclusions_es), en: row.inclusions_en ? lines(row.inclusions_en) : null},
