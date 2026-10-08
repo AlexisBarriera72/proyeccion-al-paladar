@@ -1,0 +1,58 @@
+{
+  "business": "Proyección al Paladar",
+  "instagram_handle": "proyeccionalpaladarpr",
+  "research_date": "2026-10-08",
+  "aggregate_rating": null,
+  "independent_review_count": null,
+  "independent_review_status": "No independently verifiable review-platform rating or review count located in accessible public research; this does not establish absence of reviews.",
+  "social_recommendations": [
+    {
+      "id": "instagram-keene-ratatouille",
+      "platform": "Instagram",
+      "public_author": "@keene_5439",
+      "source_url": "https://www.instagram.com/keene_5439/reel/DZlncI7Nm1Q/",
+      "experience": "Ratatouille",
+      "published_at_utc": "2026-06-15T01:18:55Z",
+      "published_local_date": "2026-06-14",
+      "display_timezone": "America/Puerto_Rico",
+      "captured_date": "2026-10-08",
+      "language": "es",
+      "excerpt": "Gracias @proyeccionalpaladarpr por la experiencia tan hermosa",
+      "excerpt_words": 7,
+      "classification": "customer_authored_social_recommendation_company_featured",
+      "sponsorship_status": "unknown",
+      "rating": null,
+      "verified_booking": false,
+      "reuse_permission": "not_verified",
+      "evidence_file": "images/evidence/customer-ratatouille-caption.jpg",
+      "verification_method": "Main researcher live-browser caption observation and DOM publication timestamp; review researcher independently verified author, excerpt, and month/day in corrected caption screenshot; web parser fetch failed."
+    },
+    {
+      "id": "instagram-almodovar-shrek",
+      "platform": "Instagram",
+      "public_author": "@almodovar.e",
+      "source_url": "https://www.instagram.com/almodovar.e/reel/DdmwdYzTYkd/",
+      "experience": "Shrek",
+      "published_at_utc": "2026-09-22T22:11:47Z",
+      "published_local_date": "2026-09-22",
+      "display_timezone": "America/Puerto_Rico",
+      "captured_date": "2026-10-08",
+      "language": "es",
+      "excerpt": "Definitivamente, recomendado a ojos cerrados.",
+      "excerpt_words": 5,
+      "classification": "customer_authored_social_recommendation_company_featured",
+      "sponsorship_status": "unknown",
+      "rating": null,
+      "verified_booking": false,
+      "reuse_permission": "not_verified",
+      "evidence_file": "images/evidence/customer-shrek-caption.jpg",
+      "verification_method": "Main researcher live-browser caption observation and DOM publication timestamp; review researcher independently verified author, excerpt, and month/day in corrected caption screenshot; web parser fetch failed."
+    }
+  ],
+  "incorrect_matches_excluded": [
+    "Paletados Aguada",
+    "Paladar Tropical in Aguacate/Aguadilla",
+    "El Paladar in Yauco",
+    "El Paladar in Aguadulce, Spain"
+  ]
+}

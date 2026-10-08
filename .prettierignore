@@ -1,0 +1,10 @@
+# The research package is kept byte-for-byte (FILE_CHECKSUMS.sha256).
+research/
+node_modules/
+dist/
+playwright-report/
+test-results/
+.wrangler/
+public/fonts/
+public/photos/
+package-lock.json
