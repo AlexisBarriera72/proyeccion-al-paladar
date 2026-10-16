@@ -11,7 +11,7 @@ export function NotFound() {
     document.title = `${t('notFound.title')} · ${t('app.name')}`;
   }, [t]);
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <div className="max-w-3xl space-y-4">
       <h1 tabIndex={-1} className={cn(pageTitle, 'focus:outline-none')}>
         {t('notFound.title')}
       </h1>

@@ -26,6 +26,13 @@ export const formatLongDate = (ms: number, lang: Lang) =>
 export const formatShortDate = (ms: number, lang: Lang) =>
   fmt(lang, {weekday: 'short', day: 'numeric', month: 'short'}).format(ms);
 
+/** The parts of a date stub: {weekday: "mié", day: "14", month: "oct"}, in Puerto Rico time. */
+export function stubParts(ms: number, lang: Lang): {weekday: string; day: string; month: string} {
+  const parts = fmt(lang, {weekday: 'short', day: 'numeric', month: 'short'}).formatToParts(ms);
+  const get = (type: string) => (parts.find(part => part.type === type)?.value ?? '').replace(/\.$/, '');
+  return {weekday: get('weekday'), day: get('day'), month: get('month')};
+}
+
 /** "7:00 p. m." / "7:00 PM" */
 export const formatTime = (ms: number, lang: Lang) => fmt(lang, {hour: 'numeric', minute: '2-digit'}).format(ms);
 

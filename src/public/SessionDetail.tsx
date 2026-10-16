@@ -1,7 +1,7 @@
 // One session: what's known about it, the terms, and the action the server would accept.
 import {lazy, Suspense, useState} from 'react';
 import {motion} from 'motion/react';
-import {ArrowLeft, ExternalLink, Link2} from 'lucide-react';
+import {ArrowLeft, CalendarDays, ExternalLink, Link2, MapPin, Tag, Users} from 'lucide-react';
 import type {PublicSession} from '../../shared/types.ts';
 import {formatLongDate, formatTime} from '../../shared/time.ts';
 import {useT} from '../lib/i18n.tsx';
@@ -10,42 +10,61 @@ import {pick} from '../lib/format.ts';
 import {Link} from '../lib/router.tsx';
 import {copyText} from '../lib/copy.ts';
 import {useMagnetic} from '../lib/motion.ts';
-import {detailTitle, helper, numbers, pageTitle} from '../lib/styles.ts';
+import {detailTitle, helper, numbers, pageTitle, sectionTitle} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
 import {AvailabilityBadge} from '../components/Status.tsx';
 import {Price} from '../components/Price.tsx';
 import {Photo} from '../components/Photo.tsx';
+import {Disclosure} from '../components/ui/disclosure.tsx';
+
+const fact = 'space-y-0.5 py-3';
+const factLabel = 'flex items-center gap-2 text-sm leading-5 text-muted [&_svg]:size-4 [&_svg]:shrink-0';
 
 // The flow loads on first use, so the calendar's first visit stays small.
 const ReserveFlow = lazy(() => import('./ReserveFlow.tsx').then(module => ({default: module.ReserveFlow})));
 
-export function PolicyBlock({policy}: {policy: PublicSession['policy']}) {
+/**
+ * The terms that apply. An announced policy keeps its label and condition in view; its exact
+ * quote sits behind a button on session pages and stays open on the terms page.
+ */
+export function PolicyBlock({policy, quoteOpen = false}: {policy: PublicSession['policy']; quoteOpen?: boolean}) {
   const {t, lang} = useT();
   if (!policy) return <p className={helper}>{t('policy.none')}</p>;
   const text = pick(policy.text, lang);
+  const quote = policy.state === 'announced' && (
+    <div className="space-y-2">
+      <figure className="space-y-1">
+        <figcaption className={helper}>{t('policy.quote')}</figcaption>
+        <blockquote lang="es" className="border-l-2 border-stone-400 pl-3 text-sm leading-5 text-ink">
+          {policy.text.es}
+        </blockquote>
+      </figure>
+      {policy.sourceUrl ? (
+        <a
+          href={policy.sourceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={buttonVariants({variant: 'link'})}
+        >
+          {t('policy.source')}
+        </a>
+      ) : null}
+    </div>
+  );
   return (
     <div className="space-y-2">
       {policy.state === 'announced' ? (
         <>
           <p className="text-sm font-semibold leading-5 text-ink">{t('policy.announced')}</p>
           <p className={helper}>{t('policy.announcedHelp')}</p>
-          <figure className="space-y-1">
-            <figcaption className={helper}>{t('policy.quote')}</figcaption>
-            <blockquote lang="es" className="border-l-2 border-stone-400 pl-3 text-sm leading-5 text-ink">
-              {policy.text.es}
-            </blockquote>
-          </figure>
-          {policy.sourceUrl ? (
-            <a
-              href={policy.sourceUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonVariants({variant: 'link'})}
-            >
-              {t('policy.source')}
-            </a>
-          ) : null}
+          {quoteOpen ? (
+            quote
+          ) : (
+            <Disclosure variant="link" summary={t('policy.readQuote')}>
+              {quote}
+            </Disclosure>
+          )}
         </>
       ) : (
         <>
@@ -130,16 +149,22 @@ export function SessionDetail({
         </div>
       </div>
 
-      <dl className="grid grid-cols-1 gap-3 text-base leading-6">
-        <div>
-          <dt className={helper}>{t('detail.when')}</dt>
-          <dd className="text-ink">
+      <dl className="divide-y divide-border/70 border-y border-border/70 text-base leading-6">
+        <div className={fact}>
+          <dt className={factLabel}>
+            <CalendarDays aria-hidden="true" />
+            {t('detail.when')}
+          </dt>
+          <dd className="pl-6 text-ink">
             <WhenText session={session} />
           </dd>
         </div>
-        <div>
-          <dt className={helper}>{t('detail.where')}</dt>
-          <dd className="text-ink">
+        <div className={fact}>
+          <dt className={factLabel}>
+            <MapPin aria-hidden="true" />
+            {t('detail.where')}
+          </dt>
+          <dd className="pl-6 text-ink">
             {session.venue ? (
               <>
                 {session.venue.name}
@@ -155,15 +180,21 @@ export function SessionDetail({
             )}
           </dd>
         </div>
-        <div>
-          <dt className={helper}>{t('detail.price')}</dt>
-          <dd className={cn('text-ink', numbers)}>
+        <div className={fact}>
+          <dt className={factLabel}>
+            <Tag aria-hidden="true" />
+            {t('detail.price')}
+          </dt>
+          <dd className={cn('pl-6 text-ink', numbers)}>
             <Price price={session.price} />
           </dd>
         </div>
-        <div>
-          <dt className={helper}>{t('detail.group')}</dt>
-          <dd className={cn('text-ink', numbers)}>
+        <div className={fact}>
+          <dt className={factLabel}>
+            <Users aria-hidden="true" />
+            {t('detail.group')}
+          </dt>
+          <dd className={cn('pl-6 text-ink', numbers)}>
             {session.partyMin !== null && session.partyMax !== null
               ? t('group.limits', {min: session.partyMin, max: session.partyMax})
               : t('group.unknown')}
@@ -213,15 +244,20 @@ export function SessionDetail({
         </div>
       </div>
 
-      {session.photoSlot ? (
-        <Photo slot={session.photoSlot} sizes={variant === 'page' ? '(min-width: 640px) 560px, 100vw' : '312px'} />
+      {session.photoSlot || session.description ? (
+        <div className="space-y-4 border-t border-border/70 pt-5">
+          {session.photoSlot ? (
+            <Photo slot={session.photoSlot} sizes={variant === 'page' ? '(min-width: 640px) 560px, 100vw' : '312px'} />
+          ) : null}
+          {session.description ? (
+            <p className="text-base leading-6 text-ink">{pick(session.description, lang)}</p>
+          ) : null}
+        </div>
       ) : null}
 
-      {session.description ? <p className="text-base leading-6 text-ink">{pick(session.description, lang)}</p> : null}
-
       {session.inclusions.es.length ? (
-        <section aria-labelledby={`includes-${session.id}`} className="space-y-2">
-          <Sub id={`includes-${session.id}`} className="text-sm font-semibold leading-5 text-ink">
+        <section aria-labelledby={`includes-${session.id}`} className="space-y-2 border-t border-border/70 pt-5">
+          <Sub id={`includes-${session.id}`} className={sectionTitle}>
             {t('detail.includes')}
           </Sub>
           <ul
@@ -236,8 +272,8 @@ export function SessionDetail({
         </section>
       ) : null}
 
-      <section aria-labelledby={`terms-${session.id}`} className="space-y-2">
-        <Sub id={`terms-${session.id}`} className="text-sm font-semibold leading-5 text-ink">
+      <section aria-labelledby={`terms-${session.id}`} className="space-y-2 border-t border-border/70 pt-5">
+        <Sub id={`terms-${session.id}`} className={sectionTitle}>
           {t('detail.terms')}
         </Sub>
         <PolicyBlock policy={session.policy} />

@@ -12,6 +12,7 @@ import {pick} from '../lib/format.ts';
 import {detailTitle, helper, pageTitle, panel} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button} from '../components/ui/button.tsx';
+import {Disclosure} from '../components/ui/disclosure.tsx';
 import {PolicyBlock} from './SessionDetail.tsx';
 
 type Policies = {current: PublicPolicy[]; earlier: PublicPolicy[]; announced: PublicPolicy[]};
@@ -53,7 +54,7 @@ export function PoliciesPage() {
     );
   } else if (load.state === 'error') {
     body = (
-      <div role="alert" className="space-y-3 rounded-2xl border border-stone-400 bg-surface p-4">
+      <div role="alert" className={cn(panel, 'space-y-3')}>
         <p className="text-base leading-6 text-ink">{t('policies.loadError')}</p>
         <Button variant="secondary" onClick={() => void fetchAll()}>
           <RotateCw aria-hidden="true" />
@@ -73,7 +74,7 @@ export function PoliciesPage() {
                   key={policy.id}
                   className="space-y-2 border-t border-border/70 pt-4 first:border-t-0 first:pt-0"
                 >
-                  <PolicyBlock policy={policy} />
+                  <PolicyBlock policy={policy} quoteOpen />
                 </article>
               ))}
             </Section>
@@ -83,7 +84,7 @@ export function PoliciesPage() {
             <Section id="policies-announced" title={t('policies.announced')}>
               {announced.map(policy => (
                 <article key={policy.id} className="space-y-2">
-                  <PolicyBlock policy={policy} />
+                  <PolicyBlock policy={policy} quoteOpen />
                 </article>
               ))}
             </Section>
@@ -96,19 +97,21 @@ export function PoliciesPage() {
         {earlier.length ? (
           <motion.div variants={entry.item}>
             <Section id="policies-earlier" title={t('policies.earlier')}>
-              <ul className="space-y-4">
-                {earlier.map(policy => (
-                  <li key={policy.id} className="space-y-1">
-                    <p className="text-sm font-semibold leading-5 text-ink">{policy.title}</p>
-                    {policy.effectiveFrom ? (
-                      <p className={helper}>
-                        {t('policy.approvedSince', {date: formatLongDate(policy.effectiveFrom, lang)})}
-                      </p>
-                    ) : null}
-                    <p className="text-sm leading-5 text-ink">{pick(policy.text, lang)}</p>
-                  </li>
-                ))}
-              </ul>
+              <Disclosure summary={t('policies.showEarlier', {count: earlier.length})}>
+                <ul className="divide-y divide-border/70">
+                  {earlier.map(policy => (
+                    <li key={policy.id} className="space-y-1 py-3 first:pt-0 last:pb-0">
+                      <p className="text-sm font-semibold leading-5 text-ink">{policy.title}</p>
+                      {policy.effectiveFrom ? (
+                        <p className={helper}>
+                          {t('policy.approvedSince', {date: formatLongDate(policy.effectiveFrom, lang)})}
+                        </p>
+                      ) : null}
+                      <p className="text-sm leading-5 text-ink">{pick(policy.text, lang)}</p>
+                    </li>
+                  ))}
+                </ul>
+              </Disclosure>
             </Section>
           </motion.div>
         ) : null}
@@ -117,7 +120,7 @@ export function PoliciesPage() {
   }
 
   return (
-    <motion.div variants={entry.page} initial="hidden" animate="show" className="mx-auto max-w-2xl space-y-4">
+    <motion.div variants={entry.page} initial="hidden" animate="show" className="max-w-3xl space-y-4">
       <motion.div variants={entry.item} className="space-y-2">
         <h1 tabIndex={-1} className={cn(pageTitle, 'focus:outline-none')}>
           {t('policies.title')}

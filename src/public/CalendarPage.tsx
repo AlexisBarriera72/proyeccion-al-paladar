@@ -22,12 +22,13 @@ import {useEntry} from '../lib/motion.ts';
 import {navigate, Link} from '../lib/router.tsx';
 import {readJson, writeJson} from '../lib/storage.ts';
 import {pick} from '../lib/format.ts';
-import {detailTitle, helper, numbers, pageTitle, panel, workspace} from '../lib/styles.ts';
+import {detailTitle, helper, inset, numbers, pageTitle, panel, workspace} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
 import {Switch} from '../components/ui/tabs.tsx';
 import {Photo} from '../components/Photo.tsx';
 import {AvailabilityBadge} from '../components/Status.tsx';
+import {DateStub} from '../components/DateStub.tsx';
 import {MonthGrid} from './MonthGrid.tsx';
 import {Agenda} from './Agenda.tsx';
 import {SessionDetail} from './SessionDetail.tsx';
@@ -43,6 +44,9 @@ type Selected =
   | {state: 'ready'; session: PublicSession};
 
 const INSTAGRAM = 'https://www.instagram.com/proyeccionalpaladarpr/';
+// The calendar is a panel from sm up; on phones it sits on the page, so its cards aren't nested.
+const panelWide =
+  'sm:rounded-2xl sm:border sm:border-border/50 sm:bg-surface sm:p-6 sm:shadow-[0_1px_2px_rgba(28,25,23,0.04),0_8px_24px_rgba(28,25,23,0.06)]';
 const inMonth = (ms: number, m: Month) => {
   const p = prDateParts(ms);
   return p.year === m.year && p.month === m.month;
@@ -231,39 +235,66 @@ function MiniMonth({
   );
 }
 
-function Intro({next, onOpen}: {next: PublicSession | null; onOpen: (session: PublicSession) => void}) {
+function NextCard({next, onOpen}: {next: PublicSession; onOpen: (session: PublicSession) => void}) {
   const {t, lang} = useT();
   return (
-    <section aria-labelledby="intro-heading" className="space-y-4">
-      <div className="grid grid-cols-[120px_minmax(0,1fr)] items-start gap-4">
-        <Photo slot="room" sizes="120px" priority caption={false} />
-        <div className="space-y-2">
+    <div className="flex gap-4 rounded-2xl border border-stone-300 p-4">
+      {next.startsAt !== null ? <DateStub ms={next.startsAt} /> : null}
+      <div className="min-w-0 flex-1 space-y-2">
+        <p className={helper}>{t('intro.next')}</p>
+        <p className="text-base font-medium leading-6 text-ink">{pick(next.title, lang)}</p>
+        {next.startsAt !== null ? (
+          <p className={cn('text-sm leading-5 text-ink first-letter:uppercase', numbers)}>
+            <span className="sr-only">{formatLongDate(next.startsAt, lang)}, </span>
+            {formatTime(next.startsAt, lang)}
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <AvailabilityBadge availability={next.availability} />
+          <Button variant="primary" onClick={() => onOpen(next)}>
+            {t('action.view')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Intro({
+  next,
+  side,
+  onOpen,
+}: {
+  /** The next date, or 'loading' while the dates load (its place is kept, so nothing shifts). */
+  next: PublicSession | null | 'loading';
+  /** The computers' side panel, where the photo is in the first view. */
+  side: boolean;
+  onOpen: (session: PublicSession) => void;
+}) {
+  const {t} = useT();
+  return (
+    <section aria-labelledby="intro-heading" className="space-y-6">
+      {next === 'loading' ? (
+        <div aria-hidden="true" className="h-[164px] rounded-2xl bg-stone-100" />
+      ) : next ? (
+        <NextCard next={next} onOpen={onOpen} />
+      ) : null}
+      <div className="space-y-4">
+        <Photo
+          slot="room"
+          sizes="(min-width: 1024px) 312px, (min-width: 640px) 240px, 100vw"
+          priority={side}
+          className="sm:max-w-60 lg:max-w-none"
+        />
+        <div className="space-y-1">
           <h2 id="intro-heading" className={detailTitle}>
             {t('app.motto')}
           </h2>
           <p className={helper}>{t('intro.quoteSource')}</p>
         </div>
+        <p className="text-base leading-6 text-ink">{t('intro.body')}</p>
       </div>
-      <p className="text-sm leading-5 text-muted">{t('photo.caption')}</p>
-      <p className="text-base leading-6 text-ink">{t('intro.body')}</p>
-      {next ? (
-        <div className="space-y-2 rounded-2xl border border-stone-300 p-4">
-          <p className={helper}>{t('intro.next')}</p>
-          <p className="text-base font-medium leading-6 text-ink">{pick(next.title, lang)}</p>
-          {next.startsAt !== null ? (
-            <p className={cn('text-sm leading-5 text-ink first-letter:uppercase', numbers)}>
-              {formatLongDate(next.startsAt, lang)}, {formatTime(next.startsAt, lang)}
-            </p>
-          ) : null}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <AvailabilityBadge availability={next.availability} />
-            <Button variant="primary" onClick={() => onOpen(next)}>
-              {t('action.view')}
-            </Button>
-          </div>
-        </div>
-      ) : null}
-      <p className={helper}>{t('intro.pick')}</p>
+      {side ? <p className={helper}>{t('intro.pick')}</p> : null}
     </section>
   );
 }
@@ -352,7 +383,7 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
   if (sessionId && !wide) {
     return (
       <motion.div variants={entry.page} initial="hidden" animate="show">
-        <motion.div variants={entry.item} className="mx-auto max-w-xl">
+        <motion.div variants={entry.item} className="max-w-xl">
           <DetailState selected={selected} variant="page" onRetry={refresh} onChanged={refresh} />
         </motion.div>
       </motion.div>
@@ -377,7 +408,7 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
         <h2
           aria-live="polite"
           className={cn(
-            'min-w-0 flex-1 text-center text-lg font-semibold leading-7 text-ink first-letter:uppercase sm:min-w-44 sm:flex-none',
+            'min-w-0 flex-1 text-center text-base font-semibold leading-6 text-ink first-letter:uppercase sm:min-w-40 sm:flex-none',
             numbers,
           )}
         >
@@ -448,7 +479,7 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
     content = <Problem message={t('cal.loadError')} onRetry={() => void reload()} />;
   } else if (load.state === 'ready' && sessions.length === 0) {
     content = (
-      <div className="space-y-3 rounded-2xl border border-stone-300 bg-surface p-4">
+      <div className={cn(inset, 'space-y-3')}>
         <p className="text-base leading-6 text-ink">{t('cal.empty')}</p>
         <a
           href={instagram}
@@ -465,7 +496,7 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
     const loading = load.state === 'loading';
     const emptyMonth =
       !loading && dated.length === 0 ? (
-        <div className="space-y-3 rounded-2xl border border-stone-300 bg-surface p-4">
+        <div className={cn(inset, 'space-y-3')}>
           <p className="text-base leading-6 text-ink">{t('cal.emptyMonth')}</p>
           {nextLater?.startsAt != null ? (
             <Button
@@ -520,7 +551,13 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
         <div aria-busy="true" className="space-y-2">
           <p className="sr-only">{t('app.loading')}</p>
           {[0, 1, 2].map(i => (
-            <div key={i} className="h-[116px] rounded-2xl border border-stone-200 bg-stone-100" />
+            <div
+              key={i}
+              className="grid grid-cols-1 gap-2 min-[22rem]:grid-cols-[3.5rem_minmax(0,1fr)] min-[22rem]:gap-3"
+            >
+              <div className="h-7 rounded-2xl bg-stone-100 min-[22rem]:h-[83px]" />
+              <div className="h-[104px] rounded-2xl border border-stone-200 bg-stone-100" />
+            </div>
           ))}
         </div>
       ) : (
@@ -541,24 +578,25 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
         <p className={helper}>{t('cal.tz')}</p>
       </motion.div>
       <div className={workspace}>
-        <motion.section variants={entry.item} aria-label={t('cal.heading')} className={cn(panel, 'min-w-0 space-y-4')}>
+        <motion.section
+          variants={entry.item}
+          aria-label={t('cal.heading')}
+          className={cn(panelWide, 'min-w-0 space-y-4 lg:self-start')}
+        >
           {controls}
           {content}
         </motion.section>
         {wide ? (
-          <motion.div
-            variants={entry.item}
-            className={cn(panel, 'lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto')}
-          >
+          <motion.div variants={entry.item} className={cn(panel, 'lg:sticky lg:top-4 lg:self-start')}>
             {selected.state === 'none' ? (
-              <Intro next={nextBookable} onOpen={open} />
+              <Intro next={load.state === 'loading' ? 'loading' : nextBookable} side onOpen={open} />
             ) : (
               <DetailState selected={selected} variant="panel" onRetry={refresh} onChanged={refresh} />
             )}
           </motion.div>
         ) : (
           <motion.div variants={entry.item} className={panel}>
-            <Intro next={null} onOpen={open} />
+            <Intro next={null} side={false} onOpen={open} />
           </motion.div>
         )}
       </div>

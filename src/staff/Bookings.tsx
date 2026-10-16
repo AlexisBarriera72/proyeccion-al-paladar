@@ -1,70 +1,84 @@
-// Staff: reservations. Search, a request entered by hand (with a duplicate warning), and one
-// booking's page: its actions by status, the exception resolutions, payments and refunds on any
-// status, link reissue and a reply helper built from the real status.
-import {useEffect, useId, useMemo, useRef, useState, type FormEvent} from 'react';
-import {ChevronLeft, Copy, Plus} from 'lucide-react';
-import type {PublicPolicy} from '../../shared/types.ts';
+// Staff: reservations. Search and filters, a request entered by hand (a sheet, with a duplicate
+// warning), and one booking's page: the status's next step stays visible, the rest sits behind
+// "Más acciones" and opens its own dialog. Payments and refunds are recorded in a dialog; the
+// ledger and the net amount stay on the page. A reply draft is built from the real status.
+import {useId, useRef, useState, type FormEvent, type ReactNode} from 'react';
+import {
+  ArrowLeftRight,
+  ArrowRightLeft,
+  ChevronLeft,
+  CircleX,
+  Copy,
+  Link2,
+  Pencil,
+  Plus,
+  Send,
+  SlidersHorizontal,
+  UserX,
+  Users,
+  X,
+} from 'lucide-react';
 import {formatLongDate, formatShortDate, formatTime, prDateKey} from '../../shared/time.ts';
 import {formatMoney} from '../lib/format.ts';
 import {copyText} from '../lib/copy.ts';
 import {newToken} from '../lib/ids.ts';
 import {Link, navigate, useLocation} from '../lib/router.tsx';
-import {helper, numbers} from '../lib/styles.ts';
+import {helper, numbers, rows, workspace} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
 import {Dialog} from '../components/ui/dialog.tsx';
+import {Disclosure} from '../components/ui/disclosure.tsx';
+import {Menu, type MenuAction} from '../components/ui/menu.tsx';
+import {Switch} from '../components/ui/tabs.tsx';
 import {intOrNull, parseMoney, useQuery, useWrite} from './api.ts';
 import {
   BookingStatus,
-  Card,
+  Callout,
   Confirm,
+  ConfirmDialog,
   Demo,
+  Empty,
+  Facts,
+  FormFooter,
+  InputAction,
+  InputDialog,
   NoticeLine,
+  Page,
+  PageHeader,
+  Panel,
   Pill,
   QueryView,
   SelectField,
   TextField,
-  When,
+  flushList,
+  rowItem,
+  useDebounced,
+  useOnOpen,
   useOutcome,
   useStaffT,
   type Notice,
 } from './ui.tsx';
-import {BookingTable, PageHeading, type StaffBookingRow, type StaffSession} from './Sessions.tsx';
-import {useMe} from './me.ts';
+import {BookingColumns, BookingRows, SessionPicker, useSessionOptions} from './rows.tsx';
+import {AuditRow} from './history.tsx';
+import {useMe, useRefreshCounts} from './me.ts';
+import type {BookingData, StaffBookingRow} from './types.ts';
 
 const STATUSES = ['inquiry', 'pending_payment', 'confirmed', 'exception', 'cancelled', 'fulfilled', 'no_show'] as const;
 const ACTIVE = ['inquiry', 'pending_payment', 'confirmed', 'exception'];
 const PHONE = /^[0-9+()\-.\s]{7,20}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function useDebounced<T>(value: T, ms: number): T {
-  const [current, setCurrent] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setCurrent(value), ms);
-    return () => clearTimeout(timer);
-  }, [value, ms]);
-  return current;
-}
+// ------------------------------------------------------------------ the list
 
-/** Published sessions a booking can go to (for moves, proposals and new requests). */
-function useSessionOptions() {
-  const {query} = useQuery<{sessions: StaffSession[]}>('/api/equipo/sessions');
-  const {lang} = useStaffT();
-  return useMemo(() => {
-    const list = query.state === 'ready' ? query.data.sessions : [];
-    const label = (s: StaffSession) =>
-      `${s.title_es ?? s.id} · ${s.starts_at === null ? '—' : `${formatShortDate(s.starts_at, lang)} ${formatTime(s.starts_at, lang)}`}`;
-    return {list, label, published: list.filter(s => s.state === 'published')};
-  }, [query, lang]);
-}
-
-export function BookingsList() {
+export function BookingsList({entry}: {entry?: {sessionId: string | null}}) {
   const {t} = useStaffT();
   const ids = useId();
   const {search: params} = useLocation();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<string>(params.get('status') ?? 'all');
-  const [sessionId, setSessionId] = useState(params.get('session') ?? '');
+  const [sessionId, setSessionId] = useState(entry ? '' : (params.get('session') ?? ''));
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const sessions = useSessionOptions();
   const q = useDebounced(search, 300);
   const query = new URLSearchParams();
@@ -72,108 +86,251 @@ export function BookingsList() {
   if (status !== 'all') query.set('status', status);
   if (sessionId) query.set('session', sessionId);
   const {query: result, reload} = useQuery<{bookings: StaffBookingRow[]}>(`/api/equipo/bookings?${query}`);
+  const active = (status !== 'all' ? 1 : 0) + (sessionId ? 1 : 0);
+  const clear = () => {
+    setStatus('all');
+    setSessionId('');
+  };
+  const sessionLabel = (sid: string) => {
+    const found = sessions.list.find(s => s.id === sid);
+    return found ? sessions.label(found) : sid;
+  };
+  const statusOptions = [
+    {value: 'all', label: t('bk.allStatuses')},
+    ...STATUSES.map(s => ({value: s, label: t(`bstatus.${s}`)})),
+  ];
+  const sessionOptions = [
+    {value: '', label: t('bk.allSessions')},
+    ...sessions.list.map(s => ({value: s.id, label: sessions.label(s)})),
+  ];
+  const chips: {key: string; text: string; remove: () => void}[] = [
+    ...(status !== 'all'
+      ? [{key: 'status', text: `${t('bk.status')}: ${t(`bstatus.${status}`)}`, remove: () => setStatus('all')}]
+      : []),
+    ...(sessionId
+      ? [{key: 'session', text: `${t('bk.session')}: ${sessionLabel(sessionId)}`, remove: () => setSessionId('')}]
+      : []),
+  ];
+
   return (
-    <>
-      <PageHeading
-        actions={
-          <Link
-            to={`/equipo/reservaciones/nueva/${sessionId ? `?session=${sessionId}` : ''}`}
-            className={buttonVariants({variant: 'primary'})}
-          >
+    <Page>
+      <PageHeader
+        title={t('nav.bookings')}
+        primary={
+          <Button variant="primary" onClick={() => setCreating(true)}>
             <Plus aria-hidden="true" />
             {t('bk.new')}
-          </Link>
+          </Button>
         }
-      >
-        {t('nav.bookings')}
-      </PageHeading>
-      <Card>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <TextField
-            id={`${ids}-q`}
-            label={t('bk.search')}
-            value={search}
-            onChange={setSearch}
-            inputMode="search"
-            type="search"
-          />
-          <SelectField
-            id={`${ids}-status`}
-            label={t('bk.status')}
-            value={status}
-            onChange={setStatus}
-            options={[
-              {value: 'all', label: t('bk.allStatuses')},
-              ...STATUSES.map(s => ({value: s, label: t(`bstatus.${s}`)})),
-            ]}
-          />
-          <SelectField
-            id={`${ids}-session`}
-            label={t('bk.session')}
-            value={sessionId}
-            onChange={setSessionId}
-            options={[
-              {value: '', label: t('bk.allSessions')},
-              ...sessions.list.map(s => ({value: s.id, label: sessions.label(s)})),
-            ]}
-          />
+      />
+      <Panel flush>
+        <div className="flex flex-col gap-3 px-4 pt-4 sm:px-6 sm:pt-5">
+          <div className="flex flex-wrap items-end gap-3 lg:flex-nowrap">
+            <TextField
+              id={`${ids}-q`}
+              label={t('bk.search')}
+              value={search}
+              onChange={setSearch}
+              inputMode="search"
+              type="search"
+              className="min-w-0 flex-1 basis-48"
+            />
+            <Button variant="secondary" className="lg:hidden" onClick={() => setFiltersOpen(true)}>
+              <SlidersHorizontal aria-hidden="true" />
+              {t('bk.filters')}
+              {active ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className={cn('inline-flex min-w-5 justify-center rounded-full bg-ink px-1.5 text-white', numbers)}
+                  >
+                    {active}
+                  </span>
+                  <span className="sr-only">{t('bk.filtersOn', {count: active})}</span>
+                </>
+              ) : null}
+            </Button>
+            <SelectField
+              id={`${ids}-status`}
+              label={t('bk.status')}
+              value={status}
+              onChange={setStatus}
+              options={statusOptions}
+              className="hidden shrink-0 lg:flex lg:w-48"
+            />
+            <SelectField
+              id={`${ids}-session`}
+              label={t('bk.session')}
+              value={sessionId}
+              onChange={setSessionId}
+              options={sessionOptions}
+              className="hidden shrink-0 lg:flex lg:w-72"
+            />
+          </div>
+          {chips.length ? (
+            <ul className="flex flex-wrap gap-2 lg:hidden">
+              {chips.map(chip => (
+                <li key={chip.key} className="max-w-full">
+                  <button
+                    type="button"
+                    onClick={chip.remove}
+                    aria-label={t('bk.removeFilter', {name: chip.text})}
+                    className="inline-flex min-h-11 max-w-full items-center gap-2 rounded-full border border-stone-500 bg-surface px-3 text-left text-sm leading-5 text-ink hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    <span className="min-w-0 break-words">{chip.text}</span>
+                    <X className="size-4 shrink-0" aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
         <QueryView query={result} onRetry={() => void reload()}>
           {({bookings}) =>
             bookings.length ? (
-              <BookingTable bookings={bookings} showSession />
+              <div>
+                <BookingColumns showSession />
+                <BookingRows bookings={bookings} showSession columns />
+              </div>
             ) : (
-              <p className="text-base leading-6 text-ink">{t('bk.empty')}</p>
+              <Empty
+                flush
+                action={
+                  active || search ? (
+                    <Button
+                      variant="ghost"
+                      className="-ml-3"
+                      onClick={() => {
+                        clear();
+                        setSearch('');
+                      }}
+                    >
+                      {t('bk.clearFilters')}
+                    </Button>
+                  ) : null
+                }
+              >
+                {t('bk.empty')}
+              </Empty>
             )
           }
         </QueryView>
-      </Card>
-    </>
+      </Panel>
+
+      <Dialog
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        kind="sheet"
+        title={t('bk.filters')}
+        closeLabel={t('staff.close')}
+        footer={
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" onClick={clear}>
+              {t('bk.clearFilters')}
+            </Button>
+            <Button variant="primary" onClick={() => setFiltersOpen(false)}>
+              {t('bk.showResults')}
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <SelectField
+            id={`${ids}-status-sheet`}
+            label={t('bk.status')}
+            value={status}
+            onChange={setStatus}
+            options={statusOptions}
+          />
+          <SelectField
+            id={`${ids}-session-sheet`}
+            label={t('bk.session')}
+            value={sessionId}
+            onChange={setSessionId}
+            options={sessionOptions}
+          />
+        </div>
+      </Dialog>
+
+      <ManualEntrySheet
+        open={Boolean(entry) || creating}
+        onOpenChange={next => {
+          if (next) return;
+          if (entry) navigate('/equipo/reservaciones/');
+          setCreating(false);
+        }}
+        sessionId={entry ? entry.sessionId : sessionId || null}
+      />
+    </Page>
   );
 }
 
-// ------------------------------------------------------------------ manual entry
+// ------------------------------------------------------------------ manual entry (a sheet)
 
-export function ManualEntry({sessionId}: {sessionId: string | null}) {
+type Source = 'instagram_dm' | 'phone' | 'in_person' | 'other';
+const blankEntry = (sessionId: string | null) => ({
+  sessionId: sessionId ?? '',
+  partySize: '2',
+  leadName: '',
+  contactKind: 'phone' as 'phone' | 'email',
+  contactValue: '',
+  note: '',
+  source: 'instagram_dm' as Source,
+});
+
+/**
+ * "Entrar solicitud a mano": for requests that arrive by Instagram, phone or in person. Saved as
+ * a request. `locked` shows the session as text (opened from that session's page).
+ */
+export function ManualEntrySheet({
+  open,
+  onOpenChange,
+  sessionId,
+  locked,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  sessionId: string | null;
+  locked?: boolean;
+}) {
   const {t} = useStaffT();
   const ids = useId();
+  const formId = useId();
   const outcome = useOutcome();
   const {run, busy} = useWrite();
-  const sessions = useSessionOptions();
+  const sessions = useSessionOptions(open);
   const [notice, setNotice] = useState<Notice>(null);
-  const [form, setForm] = useState({
-    sessionId: sessionId ?? '',
-    partySize: '2',
-    leadName: '',
-    contactKind: 'phone' as 'phone' | 'email',
-    contactValue: '',
-    note: '',
-    source: 'instagram_dm' as 'instagram_dm' | 'phone' | 'in_person' | 'other',
-  });
+  const [form, setForm] = useState(() => blankEntry(sessionId));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  useOnOpen(open, () => {
+    setForm(blankEntry(sessionId));
+    setErrors({});
+    setNotice(null);
+  });
   const set = (patch: Partial<typeof form>) => setForm(current => ({...current, ...patch}));
   const name = useDebounced(form.leadName.trim().toLowerCase(), 400);
   const contact = useDebounced(form.contactValue.trim().toLowerCase(), 400);
   const dupPath =
-    form.sessionId && (name.length > 1 || contact.length > 2)
+    open && form.sessionId && (name.length > 1 || contact.length > 2)
       ? `/api/equipo/bookings/duplicates?${new URLSearchParams({session: form.sessionId, name, contact})}`
       : null;
   const duplicates = useQuery<{duplicates: StaffBookingRow[]}>(dupPath);
   const found = dupPath && duplicates.query.state === 'ready' ? duplicates.query.data.duplicates : [];
+  const lockedSession = sessions.list.find(s => s.id === form.sessionId);
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    const found: Record<string, string> = {};
+    const problems: Record<string, string> = {};
     const size = intOrNull(form.partySize);
-    if (!form.sessionId) found.sessionId = t('bk.pickSession');
-    if (!size || Number.isNaN(size) || size > 60) found.partySize = t('ses.invalidNumber');
-    if (form.leadName.trim().length < 2) found.leadName = t('error.name');
+    if (!form.sessionId) problems.sessionId = t('bk.pickSession');
+    if (!size || Number.isNaN(size) || size > 60) problems.partySize = t('ses.invalidNumber');
+    if (form.leadName.trim().length < 2) problems.leadName = t('error.name');
     const value = form.contactValue.trim();
     if (form.contactKind === 'phone' ? !PHONE.test(value) : !EMAIL.test(value)) {
-      found.contactValue = form.contactKind === 'phone' ? t('error.phone') : t('error.email');
+      problems.contactValue = form.contactKind === 'phone' ? t('error.phone') : t('error.email');
     }
-    setErrors(found);
-    if (Object.keys(found).length) return;
+    setErrors(problems);
+    if (Object.keys(problems).length) return;
     const result = await run('/api/equipo/bookings', {
       sessionId: form.sessionId,
       partySize: size,
@@ -185,17 +342,38 @@ export function ManualEntry({sessionId}: {sessionId: string | null}) {
     });
     setNotice(outcome(result, t('bk.savedInquiry')));
     const id = result.kind === 'ok' ? (result.data.outcome as {id?: string} | null)?.id : null;
-    if (id) navigate(`/equipo/reservaciones/${id}/`);
+    if (id) {
+      onOpenChange(false);
+      navigate(`/equipo/reservaciones/${id}/`);
+    }
   };
 
   return (
-    <>
-      <PageHeading>{t('bk.new')}</PageHeading>
-      <div className="max-w-2xl space-y-4">
-        <p className="text-base leading-6 text-ink">{t('bk.newHelp')}</p>
-        <NoticeLine notice={notice} />
-        <Card>
-          <form onSubmit={save} noValidate className="space-y-4">
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      kind="sheet"
+      size="wide"
+      title={t('bk.new')}
+      description={t('bk.newHelp')}
+      closeLabel={t('staff.close')}
+      footer={
+        <div>
+          <NoticeLine notice={notice} className="mb-3" />
+          <FormFooter formId={formId} label={t('bk.saveInquiry')} busy={busy} onCancel={() => onOpenChange(false)} />
+        </div>
+      }
+    >
+      <form id={formId} onSubmit={save} noValidate className="flex flex-col gap-4">
+        {locked ? (
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium leading-5 text-ink">{t('bk.session')}</p>
+            <p className="text-base leading-6 text-ink">
+              {lockedSession ? sessions.label(lockedSession) : form.sessionId}
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
             <SelectField
               id={`${ids}-session`}
               label={t('bk.session')}
@@ -211,241 +389,119 @@ export function ManualEntry({sessionId}: {sessionId: string | null}) {
                 {errors.sessionId}
               </p>
             ) : null}
-            <SelectField
-              id={`${ids}-source`}
-              label={t('bk.source')}
-              value={form.source}
-              onChange={value => set({source: value})}
-              options={(['instagram_dm', 'phone', 'in_person', 'other'] as const).map(s => ({
-                value: s,
-                label: t(`source.${s}`),
-              }))}
-            />
-            <TextField
-              id={`${ids}-party`}
-              label={t('bk.party')}
-              inputMode="numeric"
-              value={form.partySize}
-              onChange={value => set({partySize: value})}
-              error={errors.partySize}
-            />
-            <TextField
-              id={`${ids}-name`}
-              label={t('bk.lead')}
-              value={form.leadName}
-              onChange={value => set({leadName: value})}
-              error={errors.leadName}
-              maxLength={80}
-            />
-            <SelectField
-              id={`${ids}-kind`}
-              label={t('bk.contactKind')}
+          </div>
+        )}
+        <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-start gap-4">
+          <SelectField
+            id={`${ids}-source`}
+            label={t('bk.source')}
+            value={form.source}
+            onChange={value => set({source: value})}
+            options={(['instagram_dm', 'phone', 'in_person', 'other'] as const).map(s => ({
+              value: s,
+              label: t(`source.${s}`),
+            }))}
+          />
+          <TextField
+            id={`${ids}-party`}
+            label={t('bk.party')}
+            inputMode="numeric"
+            value={form.partySize}
+            onChange={value => set({partySize: value})}
+            error={errors.partySize}
+          />
+        </div>
+        <TextField
+          id={`${ids}-name`}
+          label={t('bk.lead')}
+          value={form.leadName}
+          onChange={value => set({leadName: value})}
+          error={errors.leadName}
+          maxLength={80}
+        />
+        <div className="flex flex-col gap-2">
+          <span className="text-sm font-medium leading-5 text-ink">{t('bk.contactKind')}</span>
+          <div>
+            <Switch
               value={form.contactKind}
               onChange={value => set({contactKind: value})}
+              label={t('bk.contactKind')}
               options={[
                 {value: 'phone', label: t('bk.phone')},
                 {value: 'email', label: t('bk.email')},
               ]}
             />
-            <TextField
-              id={`${ids}-contact`}
-              label={t('bk.contact')}
-              type={form.contactKind === 'email' ? 'email' : 'tel'}
-              value={form.contactValue}
-              onChange={value => set({contactValue: value})}
-              error={errors.contactValue}
-              maxLength={120}
-            />
-            <TextField
-              id={`${ids}-note`}
-              label={t('bk.note')}
-              value={form.note}
-              onChange={value => set({note: value})}
-              multiline
-              maxLength={280}
-            />
-            {found.length ? (
-              <div role="status" className="space-y-2 rounded-2xl border-2 border-ink p-3">
-                <p className="text-sm font-semibold leading-5 text-ink">{t('bk.duplicates')}</p>
-                <ul className="space-y-1">
-                  {found.map(d => (
-                    <li key={d.id}>
-                      <Link to={`/equipo/reservaciones/${d.id}/`} className={buttonVariants({variant: 'link'})}>
-                        {d.reference} · {d.lead_name} · {t(`bstatus.${d.status}`)}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? t('flow.sending') : t('bk.saveInquiry')}
-            </Button>
-          </form>
-        </Card>
-      </div>
-    </>
+          </div>
+        </div>
+        <TextField
+          id={`${ids}-contact`}
+          label={t('bk.contact')}
+          type={form.contactKind === 'email' ? 'email' : 'tel'}
+          inputMode={form.contactKind === 'email' ? 'email' : 'tel'}
+          value={form.contactValue}
+          onChange={value => set({contactValue: value})}
+          error={errors.contactValue}
+          maxLength={120}
+        />
+        <TextField
+          id={`${ids}-note`}
+          label={t('bk.note')}
+          value={form.note}
+          onChange={value => set({note: value})}
+          multiline
+          maxLength={280}
+          counter
+        />
+        {found.length ? (
+          <Callout role="status">
+            <p className="font-semibold">{t('bk.duplicates')}</p>
+            <ul className="flex flex-col gap-1">
+              {found.map(d => (
+                <li key={d.id}>
+                  <Link to={`/equipo/reservaciones/${d.id}/`} className={buttonVariants({variant: 'link'})}>
+                    {d.reference} · {d.lead_name} · {t(`bstatus.${d.status}`)}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Callout>
+        ) : null}
+      </form>
+    </Dialog>
   );
 }
 
 // ------------------------------------------------------------------ one booking
 
-interface Payment {
-  id: string;
-  kind: 'payment' | 'refund' | 'reversal';
-  method: string;
-  amount_cents: number;
-  currency: string;
-  external_reference: string | null;
-  reverses_payment_id: string | null;
-  note: string | null;
-  recorded_by: string;
-  recorded_at: number;
-}
-
-interface BookingData {
-  booking: StaffBookingRow & {
-    accepted_policy_version_id: string | null;
-    accepted_at: number | null;
-    terms_price_status: 'approved' | 'not_charged' | null;
-    unit_price_cents: number | null;
-    currency: string | null;
-    has_link: number;
-    updated_at: number;
-  };
-  session: (StaffSession & {title_es: string; seats_taken: number}) | null;
-  payments: Payment[];
-  acceptances: {
-    id: string;
-    session_id: string;
-    policy_version_id: string;
-    price_status: string;
-    unit_price_cents: number | null;
-    currency: string | null;
-    accepted_at: number;
-  }[];
-  proposals: {
-    id: string;
-    session_id: string;
-    status: 'open' | 'accepted' | 'withdrawn';
-    created_at: number;
-    created_by: string;
-  }[];
-  requests: {
-    id: string;
-    kind: 'cancel' | 'change';
-    details: string | null;
-    status: 'open' | 'resolved';
-    created_at: number;
-  }[];
-  audit: {mutation_id: string; actor: string; action: string; at: number}[];
-  lockedPolicy: PublicPolicy | null;
-  lockedRules: {
-    state: string;
-    fullPayment: number | null;
-    refundFractionBp: number | null;
-    cutoffRule: string | null;
-  } | null;
-}
-
-function Detail({label, children}: {label: string; children: React.ReactNode}) {
-  return (
-    <div>
-      <dt className={helper}>{label}</dt>
-      <dd className="text-base leading-6 text-ink">{children}</dd>
-    </div>
-  );
-}
-
-function SessionPicker({
-  id,
-  label,
-  value,
-  onChange,
-  exclude,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  exclude: string;
-}) {
-  const {t} = useStaffT();
-  const sessions = useSessionOptions();
-  return (
-    <SelectField
-      id={id}
-      label={label}
-      value={value}
-      onChange={onChange}
-      options={[
-        {value: '', label: t('bk.pickSession')},
-        ...sessions.published.filter(s => s.id !== exclude).map(s => ({value: s.id, label: sessions.label(s)})),
-      ]}
-    />
-  );
-}
-
-/** An action that needs one more input (a size or a session) before it is sent. */
-function InputAction({
-  label,
-  disabled,
-  children,
-  canSend,
-  onSend,
-}: {
-  label: string;
-  disabled?: boolean;
-  children: React.ReactNode;
-  canSend: boolean;
-  onSend: () => Promise<boolean>;
-}) {
-  const {t} = useStaffT();
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button variant="secondary" onClick={() => setOpen(true)} disabled={disabled}>
-        {label}
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen} title={label} closeLabel={t('staff.close')}>
-        <form
-          className="space-y-4"
-          onSubmit={async event => {
-            event.preventDefault();
-            if (await onSend()) setOpen(false);
-          }}
-        >
-          {children}
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button variant="secondary" onClick={() => setOpen(false)}>
-              {t('staff.cancelAction')}
-            </Button>
-            <Button type="submit" variant="primary" disabled={!canSend || disabled}>
-              {label}
-            </Button>
-          </div>
-        </form>
-      </Dialog>
-    </>
-  );
-}
+type BookingDialog = 'resize' | 'move' | 'propose' | 'edit' | 'reissue' | 'cancel' | 'reply' | 'payment';
 
 export function BookingPage({id}: {id: string}) {
   const {t, lang} = useStaffT();
   const me = useMe();
   const ids = useId();
   const outcome = useOutcome();
+  const refreshCounts = useRefreshCounts();
   const {run, busy} = useWrite();
   const {query, reload} = useQuery<BookingData>(`/api/equipo/bookings/${id}`);
   const sessions = useSessionOptions();
   const [notice, setNotice] = useState<Notice>(null);
+  const [dialog, setDialog] = useState<BookingDialog | null>(null);
   const [size, setSize] = useState('');
   const [destination, setDestination] = useState('');
   const [freshLink, setFreshLink] = useState<string | null>(null);
-  const [reply, setReply] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   // A reissue whose answer was lost is retried with the same token (and so the same intent).
   const pendingToken = useRef<string | null>(null);
+
+  const openDialog = (next: BookingDialog) => {
+    setDestination('');
+    setSize('');
+    setDialog(next);
+  };
+  const dialogProps = (name: BookingDialog) => ({
+    open: dialog === name,
+    onOpenChange: (open: boolean) => setDialog(open ? name : null),
+  });
 
   return (
     <QueryView query={query} onRetry={() => void reload()}>
@@ -469,6 +525,7 @@ export function BookingPage({id}: {id: string}) {
           }
           setNotice(next);
           void reload(true);
+          refreshCounts();
           return result.kind === 'ok';
         };
 
@@ -482,21 +539,24 @@ export function BookingPage({id}: {id: string}) {
           });
           if (result.kind !== 'lost') pendingToken.current = null;
           setNotice(outcome(result, t('bk.reissueDone')));
-          if (result.kind === 'ok') setFreshLink(`${location.origin}/reservacion/${token}/`);
+          if (result.kind === 'ok') {
+            setCopied(null);
+            setFreshLink(`${location.origin}/reservacion/${token}/`);
+          }
           void reload(true);
         };
 
-        const copy = async (text: string, key: string) => {
-          setCopied((await copyText(text)) ? key : `fail:${key}`);
+        const copyLink = async (text: string) => {
+          setCopied((await copyText(text)) ? 'link' : 'fail:link');
         };
 
         const when =
           session?.starts_at != null
             ? `${formatLongDate(session.starts_at, lang)}, ${formatTime(session.starts_at, lang)}`
             : t('staff.dateTbd');
-        const buildReply = () => {
+        const replyText = () => {
           const text = t(`reply.${status}`, {name: b.lead_name, reference: b.reference, when, people});
-          setReply(freshLink ? `${text} ${t('reply.link', {url: freshLink})}` : text);
+          return freshLink ? `${text} ${t('reply.link', {url: freshLink})}` : text;
         };
 
         const seatsLeft =
@@ -515,33 +575,214 @@ export function BookingPage({id}: {id: string}) {
             ? Math.floor((b.net * data.lockedRules.refundFractionBp) / 10000)
             : null;
         const sessionTitle = (sid: string) => sessions.list.find(s => s.id === sid)?.title_es ?? sid;
+        const openRequests = data.requests.filter(r => r.status === 'open');
+        const doneRequests = data.requests.filter(r => r.status !== 'open');
+
+        const summary: [string, ReactNode][] = [
+          [
+            t('bk.contact'),
+            <span className="flex flex-col items-start gap-2">
+              <span className="break-all">
+                {t(b.contact_kind === 'phone' ? 'bk.phone' : 'bk.email')}: {b.contact_value}
+              </span>
+              <Button variant="secondary" onClick={() => openDialog('reply')}>
+                <Pencil aria-hidden="true" />
+                {t('bk.buildReply')}
+              </Button>
+            </span>,
+          ],
+        ];
+        if (b.note) summary.push([t('bk.note'), <span className="whitespace-pre-line">{b.note}</span>]);
+        summary.push([t('bk.source'), t(`source.${b.source}`)]);
+        if (b.checked_in_at)
+          summary.push([t('ton.arrived'), t('bk.checkedIn', {time: formatTime(b.checked_in_at, lang)})]);
+
+        // The status's next step stays visible; one primary at most.
+        const checkIn = status === 'confirmed' && today && !b.checked_in_at;
+        const undoCheckIn = status === 'confirmed' && today && Boolean(b.checked_in_at);
+        const complete = status === 'confirmed' && started;
+
+        const more: MenuAction[] = [
+          ...(status === 'confirmed'
+            ? [{key: 'resize', label: t('bk.resize'), icon: Users, onSelect: () => openDialog('resize')}]
+            : []),
+          ...(status === 'confirmed' || status === 'inquiry' || status === 'pending_payment'
+            ? [{key: 'move', label: t('bk.move'), icon: ArrowRightLeft, onSelect: () => openDialog('move')}]
+            : []),
+          ...(ACTIVE.includes(status)
+            ? [{key: 'propose', label: t('bk.propose'), icon: Send, onSelect: () => openDialog('propose')}]
+            : []),
+          ...(status === 'inquiry' || status === 'pending_payment'
+            ? [{key: 'edit', label: t('bk.edit'), icon: Pencil, onSelect: () => openDialog('edit')}]
+            : []),
+          {key: 'reissue', label: t('bk.reissue'), icon: Link2, onSelect: () => openDialog('reissue')},
+          ...(complete
+            ? [
+                {
+                  key: 'noShow',
+                  label: t('bk.noShow'),
+                  icon: UserX,
+                  disabled: busy,
+                  onSelect: () => void act({action: 'no_show'}, t('bk.done')),
+                },
+              ]
+            : []),
+          ...(ACTIVE.includes(status)
+            ? [
+                {
+                  key: 'cancel',
+                  label: t('bk.cancel'),
+                  icon: CircleX,
+                  destructive: true,
+                  onSelect: () => openDialog('cancel'),
+                },
+              ]
+            : []),
+        ];
 
         return (
-          <>
-            <Link to="/equipo/reservaciones/" className={cn(buttonVariants({variant: 'ghost'}), '-ml-3 mb-2')}>
-              <ChevronLeft aria-hidden="true" />
-              {t('bk.back')}
-            </Link>
-            <PageHeading>{`${b.lead_name} · ${b.reference}`}</PageHeading>
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <Demo synthetic={b.synthetic} />
-              <BookingStatus status={status} />
-              {b.exception_reason ? (
-                <Pill strong>{t('bk.exceptionReason', {reason: t(`reason.${b.exception_reason}`)})}</Pill>
-              ) : null}
-              <span className={cn('text-sm leading-5 text-ink', numbers)}>{people}</span>
-            </div>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="min-w-0 space-y-4">
-                <NoticeLine notice={notice} />
+          <Page>
+            <PageHeader
+              back={
+                <Link to="/equipo/reservaciones/" className={buttonVariants({variant: 'ghost'})}>
+                  <ChevronLeft aria-hidden="true" />
+                  {t('bk.back')}
+                </Link>
+              }
+              title={b.lead_name}
+              meta={
+                <>
+                  <Demo synthetic={b.synthetic} />
+                  <BookingStatus status={status} />
+                  {b.exception_reason ? (
+                    <Pill strong>{t('bk.exceptionReason', {reason: t(`reason.${b.exception_reason}`)})}</Pill>
+                  ) : null}
+                  <span className={cn('text-sm leading-5 text-ink', numbers)}>{b.reference}</span>
+                  <span className={cn('text-sm leading-5 text-ink', numbers)}>{people}</span>
+                  {session ? (
+                    <span className="text-sm leading-5 text-ink">
+                      <Link to={`/equipo/sesiones/${session.id}/`} className={buttonVariants({variant: 'link'})}>
+                        {session.title_es}
+                      </Link>
+                      {' · '}
+                      <span className={numbers}>
+                        {session.starts_at === null
+                          ? t('staff.dateTbd')
+                          : `${formatShortDate(session.starts_at, lang)}, ${formatTime(session.starts_at, lang)}`}
+                      </span>
+                    </span>
+                  ) : null}
+                </>
+              }
+              actions={
+                <>
+                  {status === 'inquiry' || status === 'pending_payment' ? (
+                    <Confirm
+                      variant="primary"
+                      className="w-full sm:w-auto"
+                      trigger={t('bk.confirm')}
+                      title={t('bk.confirm')}
+                      body={t('bk.confirmBody')}
+                      confirmLabel={t('bk.confirm')}
+                      disabled={busy}
+                      onConfirm={() => act({action: 'confirm'}, t('bk.done'))}
+                    />
+                  ) : null}
+                  {status === 'exception' ? (
+                    <>
+                      <Confirm
+                        variant="primary"
+                        className="w-full sm:w-auto"
+                        trigger={t('exc.same')}
+                        title={t('exc.same')}
+                        body={t('bk.confirmBody')}
+                        confirmLabel={t('exc.same')}
+                        disabled={busy}
+                        onConfirm={() => act({action: 'resolve_same'}, t('bk.done'))}
+                      />
+                      <InputAction
+                        label={t('exc.other')}
+                        disabled={busy}
+                        busy={busy}
+                        canSend={Boolean(destination)}
+                        onSend={() => act({action: 'resolve_other', destination}, t('bk.done'))}
+                      >
+                        <SessionPicker
+                          id={`${ids}-resolve`}
+                          label={t('bk.destination')}
+                          value={destination}
+                          onChange={setDestination}
+                          exclude={b.session_id}
+                        />
+                        <p className={helper}>{t('bk.confirmBody')}</p>
+                      </InputAction>
+                    </>
+                  ) : null}
+                  {checkIn ? (
+                    <Button
+                      variant="primary"
+                      className="w-full sm:w-auto"
+                      disabled={busy}
+                      onClick={() => void act({action: 'check_in'}, t('bk.done'))}
+                    >
+                      {t('bk.checkIn')}
+                    </Button>
+                  ) : null}
+                  {undoCheckIn ? (
+                    <Button
+                      variant="secondary"
+                      disabled={busy}
+                      onClick={() => void act({action: 'undo_check_in'}, t('bk.done'))}
+                    >
+                      {t('bk.undoCheckIn')}
+                    </Button>
+                  ) : null}
+                  {complete ? (
+                    <Button
+                      variant={checkIn ? 'secondary' : 'primary'}
+                      disabled={busy}
+                      onClick={() => void act({action: 'fulfilled'}, t('bk.done'))}
+                    >
+                      {t('bk.fulfilled')}
+                    </Button>
+                  ) : null}
+                  <Menu label={t('staff.more')} actions={more} />
+                </>
+              }
+            />
+            <NoticeLine notice={notice} />
+
+            {openRequests.length || freshLink ? (
+              <div className="mb-6 flex flex-col gap-3">
+                {openRequests.map(r => (
+                  <Callout key={r.id} icon={r.kind === 'cancel' ? CircleX : ArrowLeftRight}>
+                    <p className="font-semibold">
+                      {t('bk.openRequest', {kind: t(`req.kind.${r.kind}`), date: formatShortDate(r.created_at, lang)})}
+                    </p>
+                    {r.details ? <p className="whitespace-pre-line break-words">{r.details}</p> : null}
+                    <Button
+                      variant="secondary"
+                      className="self-start"
+                      disabled={busy}
+                      onClick={async () => {
+                        const result = await run(`/api/equipo/requests/${r.id}/resolve`, {});
+                        setNotice(outcome(result, t('req.resolved')));
+                        void reload(true);
+                        refreshCounts();
+                      }}
+                    >
+                      {t('bk.resolve')}
+                    </Button>
+                  </Callout>
+                ))}
                 {freshLink ? (
-                  <Card title={t('bk.reissue')}>
-                    <p className="text-sm font-medium leading-5 text-ink">{t('bk.reissueDone')}</p>
-                    <p className="break-all rounded-xl border border-stone-300 bg-stone-50 p-3 font-mono text-sm leading-5 text-ink">
+                  <Callout icon={Link2}>
+                    <p className="font-medium">{t('bk.reissueDone')}</p>
+                    <p className="break-all rounded-2xl border border-stone-300 bg-stone-50 p-3 font-mono">
                       {freshLink}
                     </p>
-                    <div className="flex items-center gap-3">
-                      <Button variant="secondary" onClick={() => void copy(freshLink, 'link')}>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button variant="secondary" onClick={() => void copyLink(freshLink)}>
                         <Copy aria-hidden="true" />
                         {t('bk.copy')}
                       </Button>
@@ -549,229 +790,38 @@ export function BookingPage({id}: {id: string}) {
                         {copied === 'link' ? t('bk.copied') : copied === 'fail:link' ? t('bk.copyFailed') : ''}
                       </span>
                     </div>
-                  </Card>
+                  </Callout>
                 ) : null}
+              </div>
+            ) : null}
 
-                <Card title={t('bk.actions')}>
-                  {status === 'exception' ? <p className="text-sm leading-5 text-ink">{t('exc.help')}</p> : null}
-                  <div className="flex flex-wrap gap-2">
-                    {status === 'inquiry' || status === 'pending_payment' ? (
-                      <Confirm
-                        variant="primary"
-                        trigger={t('bk.confirm')}
-                        title={t('bk.confirm')}
-                        body={t('bk.confirmBody')}
-                        confirmLabel={t('bk.confirm')}
-                        disabled={busy}
-                        onConfirm={() => act({action: 'confirm'}, t('bk.done'))}
-                      />
-                    ) : null}
-                    {status === 'exception' ? (
-                      <>
-                        <Confirm
-                          variant="primary"
-                          trigger={t('exc.same')}
-                          title={t('exc.same')}
-                          body={t('bk.confirmBody')}
-                          confirmLabel={t('exc.same')}
-                          disabled={busy}
-                          onConfirm={() => act({action: 'resolve_same'}, t('bk.done'))}
-                        />
-                        <InputAction
-                          label={t('exc.other')}
-                          disabled={busy}
-                          canSend={Boolean(destination)}
-                          onSend={() => act({action: 'resolve_other', destination}, t('bk.done'))}
-                        >
-                          <SessionPicker
-                            id={`${ids}-resolve`}
-                            label={t('bk.destination')}
-                            value={destination}
-                            onChange={setDestination}
-                            exclude={b.session_id}
-                          />
-                          <p className={helper}>{t('bk.confirmBody')}</p>
-                        </InputAction>
-                      </>
-                    ) : null}
-                    {status === 'confirmed' ? (
-                      <InputAction
-                        label={t('bk.resize')}
-                        disabled={busy}
-                        canSend={Boolean(intOrNull(size))}
-                        onSend={() => act({action: 'resize', partySize: intOrNull(size)}, t('bk.done'))}
-                      >
-                        <TextField
-                          id={`${ids}-size`}
-                          label={t('bk.party')}
-                          inputMode="numeric"
-                          value={size || String(b.party_size)}
-                          onChange={setSize}
-                        />
-                      </InputAction>
-                    ) : null}
-                    {status === 'confirmed' || status === 'inquiry' || status === 'pending_payment' ? (
-                      <InputAction
-                        label={t('bk.move')}
-                        disabled={busy}
-                        canSend={Boolean(destination)}
-                        onSend={() => act({action: 'move', destination}, t('bk.done'))}
-                      >
-                        <SessionPicker
-                          id={`${ids}-move`}
-                          label={t('bk.destination')}
-                          value={destination}
-                          onChange={setDestination}
-                          exclude={b.session_id}
-                        />
-                      </InputAction>
-                    ) : null}
-                    {ACTIVE.includes(status) ? (
-                      <InputAction
-                        label={t('bk.propose')}
-                        disabled={busy}
-                        canSend={Boolean(destination)}
-                        onSend={() => act({action: 'propose_terms', sessionId: destination}, t('bk.done'))}
-                      >
-                        <SessionPicker
-                          id={`${ids}-propose`}
-                          label={t('ses.policy')}
-                          value={destination}
-                          onChange={setDestination}
-                          exclude=""
-                        />
-                        <p className={helper}>{t('bk.proposeHelp')}</p>
-                      </InputAction>
-                    ) : null}
-                    {status === 'inquiry' || status === 'pending_payment' ? (
-                      <EditBooking booking={b} onSent={act} busy={busy} />
-                    ) : null}
-                    {status === 'confirmed' && today && !b.checked_in_at ? (
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() => void act({action: 'check_in'}, t('bk.done'))}
-                      >
-                        {t('bk.checkIn')}
-                      </Button>
-                    ) : null}
-                    {status === 'confirmed' && today && b.checked_in_at ? (
-                      <Button
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() => void act({action: 'undo_check_in'}, t('bk.done'))}
-                      >
-                        {t('bk.undoCheckIn')}
-                      </Button>
-                    ) : null}
-                    {status === 'confirmed' && started ? (
-                      <>
-                        <Button
-                          variant="secondary"
-                          disabled={busy}
-                          onClick={() => void act({action: 'fulfilled'}, t('bk.done'))}
-                        >
-                          {t('bk.fulfilled')}
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          disabled={busy}
-                          onClick={() => void act({action: 'no_show'}, t('bk.done'))}
-                        >
-                          {t('bk.noShow')}
-                        </Button>
-                      </>
-                    ) : null}
-                    {ACTIVE.includes(status) ? (
-                      <Confirm
-                        trigger={status === 'exception' ? t('exc.cancel') : t('bk.cancel')}
-                        title={t('bk.cancel')}
-                        body={t('bk.cancelBody')}
-                        confirmLabel={t('bk.cancel')}
-                        disabled={busy}
-                        onConfirm={() => act({action: 'cancel'}, t('bk.done'))}
-                      />
-                    ) : null}
-                    <Confirm
-                      variant="secondary"
-                      trigger={t('bk.reissue')}
-                      title={t('bk.reissue')}
-                      body={t('bk.reissueBody')}
-                      confirmLabel={t('bk.reissue')}
-                      disabled={busy}
-                      onConfirm={reissue}
-                    />
+            <div className={cn(workspace, 'items-start')}>
+              <div className="flex min-w-0 flex-col gap-6">
+                <Panel title={t('bk.summary')}>
+                  <Facts items={summary} />
+                  <div className="flex flex-col gap-1">
+                    <p className={helper}>{t('bk.created', {date: formatLongDate(b.created_at, lang)})}</p>
+                    {!b.has_link ? <p className={helper}>{t('bk.noLink')}</p> : null}
                   </div>
-                  {!b.has_link ? <p className={helper}>{t('bk.noLink')}</p> : null}
-                </Card>
-
+                </Panel>
                 <Payments
                   data={data}
-                  onRecorded={() => void reload(true)}
-                  setNotice={setNotice}
+                  open={dialog === 'payment'}
+                  onOpenChange={open => setDialog(open ? 'payment' : null)}
+                  onRecorded={next => {
+                    setNotice(next);
+                    void reload(true);
+                    refreshCounts();
+                  }}
                   seatsLeft={seatsLeft}
                   refundCalc={refundCalc}
                 />
-
-                <Card title={t('bk.reply')}>
-                  <p className={helper}>{t('bk.replyHelp')}</p>
-                  <Button variant="secondary" onClick={buildReply}>
-                    {t('bk.reply')}
-                  </Button>
-                  {reply ? (
-                    <div className="space-y-2">
-                      <textarea
-                        readOnly
-                        value={reply}
-                        aria-label={t('bk.reply')}
-                        className="block min-h-24 w-full rounded-2xl border border-stone-500 bg-surface p-3 text-base leading-6 text-ink"
-                      />
-                      <div className="flex items-center gap-3">
-                        <Button variant="secondary" onClick={() => void copy(reply, 'reply')}>
-                          <Copy aria-hidden="true" />
-                          {t('bk.copy')}
-                        </Button>
-                        <span role="status" className={helper}>
-                          {copied === 'reply' ? t('bk.copied') : copied === 'fail:reply' ? t('bk.copyFailed') : ''}
-                        </span>
-                      </div>
-                    </div>
-                  ) : null}
-                </Card>
               </div>
 
-              <div className="space-y-4">
-                <Card>
-                  <dl className="space-y-3">
-                    <Detail label={t('ses.experience')}>
-                      {session ? (
-                        <Link to={`/equipo/sesiones/${session.id}/`} className={buttonVariants({variant: 'link'})}>
-                          {session.title_es}
-                        </Link>
-                      ) : null}
-                      <span className="block text-sm leading-5">
-                        <When ms={session?.starts_at ?? null} />
-                      </span>
-                    </Detail>
-                    <Detail label={t('bk.contact')}>
-                      {t(b.contact_kind === 'phone' ? 'bk.phone' : 'bk.email')}: {b.contact_value}
-                    </Detail>
-                    {b.note ? <Detail label={t('bk.note')}>{b.note}</Detail> : null}
-                    <Detail label={t('bk.source')}>{t(`source.${b.source}`)}</Detail>
-                    <Detail label={t('bk.reference')}>
-                      <span className={numbers}>{b.reference}</span>
-                    </Detail>
-                    {b.checked_in_at ? (
-                      <Detail label={t('ton.arrived')}>
-                        {t('bk.checkedIn', {time: formatTime(b.checked_in_at, lang)})}
-                      </Detail>
-                    ) : null}
-                    <p className={helper}>{t('bk.created', {date: formatLongDate(b.created_at, lang)})}</p>
-                  </dl>
-                </Card>
-                <Card title={t('bk.locked')}>
+              <div className="flex min-w-0 flex-col gap-6">
+                <Panel title={t('bk.locked')}>
                   {b.accepted_at ? (
-                    <div className="space-y-2 text-sm leading-5 text-ink">
+                    <div className="flex flex-col gap-2 text-sm leading-5 text-ink">
                       <p>{data.lockedPolicy?.title}</p>
                       {lockedPrice ? <p className={numbers}>{t('bk.lockedPrice', {price: lockedPrice})}</p> : null}
                       <p className={helper}>{t('bk.acceptedOn', {date: formatLongDate(b.accepted_at, lang)})}</p>
@@ -779,93 +829,189 @@ export function BookingPage({id}: {id: string}) {
                   ) : (
                     <p className="text-sm leading-5 text-ink">{t('bk.lockedNone')}</p>
                   )}
-                </Card>
+                </Panel>
                 {data.proposals.length ? (
-                  <Card title={t('bk.proposals')}>
-                    <ul className="space-y-2 text-sm leading-5 text-ink">
+                  <Panel title={t('bk.proposals')}>
+                    <ul className="flex flex-col gap-2 text-sm leading-5 text-ink">
                       {data.proposals.map(p => (
                         <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
-                          <span>
+                          <span className={numbers}>
                             {sessionTitle(p.session_id)} · {formatShortDate(p.created_at, lang)}
                           </span>
                           <Pill strong={p.status === 'open'}>{t(`bk.proposal.${p.status}`)}</Pill>
                         </li>
                       ))}
                     </ul>
-                  </Card>
+                  </Panel>
                 ) : null}
-                {data.requests.length ? (
-                  <Card title={t('bk.requests')}>
-                    <ul className="space-y-3">
-                      {data.requests.map(r => (
-                        <li key={r.id} className="space-y-1 text-sm leading-5 text-ink">
+                {doneRequests.length ? (
+                  <Panel title={t('bk.requests')}>
+                    <ul className="flex flex-col gap-3 text-sm leading-5 text-ink">
+                      {doneRequests.map(r => (
+                        <li key={r.id} className="flex flex-col gap-1">
                           <p className="font-semibold">
                             {t(`req.kind.${r.kind}`)} · {formatShortDate(r.created_at, lang)}
                           </p>
-                          {r.details ? <p>{r.details}</p> : null}
-                          {r.status === 'open' ? (
-                            <Button
-                              variant="secondary"
-                              disabled={busy}
-                              onClick={async () => {
-                                const result = await run(`/api/equipo/requests/${r.id}/resolve`, {});
-                                setNotice(outcome(result, t('req.resolved')));
-                                void reload(true);
-                              }}
-                            >
-                              {t('bk.resolve')}
-                            </Button>
-                          ) : (
+                          {r.details ? <p className="break-words">{r.details}</p> : null}
+                          <span className="self-start">
                             <Pill>{t('req.resolved')}</Pill>
-                          )}
+                          </span>
                         </li>
                       ))}
                     </ul>
-                  </Card>
+                  </Panel>
                 ) : null}
-                <Card title={t('bk.history')}>
-                  {data.audit.length ? null : <p className="text-sm leading-5 text-ink">{t('hist.empty')}</p>}
-                  <ul className="space-y-2 text-sm leading-5 text-ink">
-                    {data.audit.map(event => (
-                      <li key={event.mutation_id}>
-                        <span className="font-medium">{event.action}</span>
-                        <span className={cn('block', helper)}>
-                          {t('hist.by', {
-                            who: event.actor,
-                            date: `${formatShortDate(event.at, lang)} ${formatTime(event.at, lang)}`,
-                          })}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </Card>
+                <Panel>
+                  <Disclosure summary={t('bk.historyCount', {count: data.audit.length})}>
+                    {data.audit.length ? (
+                      <ul className={rows}>
+                        {data.audit.map(event => (
+                          <AuditRow
+                            key={event.mutation_id}
+                            event={event}
+                            showRecord={false}
+                            withDate
+                            className="px-0 sm:px-0"
+                          />
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm leading-5 text-ink">{t('hist.empty')}</p>
+                    )}
+                  </Disclosure>
+                </Panel>
               </div>
             </div>
-          </>
+
+            <InputDialog
+              {...dialogProps('resize')}
+              label={t('bk.resize')}
+              busy={busy}
+              canSend={Boolean(intOrNull(size || String(b.party_size)))}
+              onSend={() => act({action: 'resize', partySize: intOrNull(size || String(b.party_size))}, t('bk.done'))}
+            >
+              <TextField
+                id={`${ids}-size`}
+                label={t('bk.party')}
+                inputMode="numeric"
+                value={size || String(b.party_size)}
+                onChange={setSize}
+              />
+            </InputDialog>
+            <InputDialog
+              {...dialogProps('move')}
+              label={t('bk.move')}
+              busy={busy}
+              canSend={Boolean(destination)}
+              onSend={() => act({action: 'move', destination}, t('bk.done'))}
+            >
+              <SessionPicker
+                id={`${ids}-move`}
+                label={t('bk.destination')}
+                value={destination}
+                onChange={setDestination}
+                exclude={b.session_id}
+              />
+            </InputDialog>
+            <InputDialog
+              {...dialogProps('propose')}
+              label={t('bk.propose')}
+              description={t('bk.proposeHelp')}
+              busy={busy}
+              canSend={Boolean(destination)}
+              onSend={() => act({action: 'propose_terms', sessionId: destination}, t('bk.done'))}
+            >
+              <SessionPicker
+                id={`${ids}-propose`}
+                label={t('ses.policy')}
+                value={destination}
+                onChange={setDestination}
+                exclude=""
+              />
+            </InputDialog>
+            <EditBooking {...dialogProps('edit')} booking={b} onSent={act} busy={busy} />
+            <ConfirmDialog
+              {...dialogProps('reissue')}
+              title={t('bk.reissue')}
+              body={t('bk.reissueBody')}
+              confirmLabel={t('bk.reissue')}
+              onConfirm={reissue}
+            />
+            <ConfirmDialog
+              {...dialogProps('cancel')}
+              title={t('bk.cancel')}
+              body={t('bk.cancelBody')}
+              confirmLabel={t('bk.cancel')}
+              onConfirm={() => act({action: 'cancel'}, t('bk.done'))}
+            />
+            <ReplyDialog {...dialogProps('reply')} text={replyText()} />
+          </Page>
         );
       }}
     </QueryView>
   );
 }
 
+/** "Respuesta para el cliente": a draft built from the real status, to copy and review. */
+function ReplyDialog({open, onOpenChange, text}: {open: boolean; onOpenChange: (open: boolean) => void; text: string}) {
+  const {t} = useStaffT();
+  const [copied, setCopied] = useState<'ok' | 'fail' | null>(null);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next) setCopied(null);
+        onOpenChange(next);
+      }}
+      title={t('bk.replyTitle')}
+      description={t('bk.replyHelp')}
+      closeLabel={t('staff.close')}
+    >
+      <div className="flex flex-col gap-3">
+        <textarea
+          readOnly
+          value={text}
+          aria-label={t('bk.replyTitle')}
+          className="block min-h-32 w-full rounded-2xl border border-stone-500 bg-surface p-3 text-base leading-6 text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="secondary" onClick={async () => setCopied((await copyText(text)) ? 'ok' : 'fail')}>
+            <Copy aria-hidden="true" />
+            {t('bk.copy')}
+          </Button>
+          <span role="status" className={helper}>
+            {copied === 'ok' ? t('bk.copied') : copied === 'fail' ? t('bk.copyFailed') : ''}
+          </span>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 function EditBooking({
+  open,
+  onOpenChange,
   booking,
   onSent,
   busy,
 }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   booking: StaffBookingRow;
   onSent: (body: Record<string, unknown>, ok: string) => Promise<boolean>;
   busy: boolean;
 }) {
   const {t} = useStaffT();
   const ids = useId();
-  const [form, setForm] = useState({
+  const initial = () => ({
     partySize: String(booking.party_size),
     leadName: booking.lead_name,
     contactKind: booking.contact_kind,
     contactValue: booking.contact_value,
     note: booking.note ?? '',
   });
+  const [form, setForm] = useState(initial);
+  useOnOpen(open, () => setForm(initial()));
   const set = (patch: Partial<typeof form>) => setForm(current => ({...current, ...patch}));
   const size = intOrNull(form.partySize);
   const valid =
@@ -874,9 +1020,11 @@ function EditBooking({
     form.leadName.trim().length >= 2 &&
     (form.contactKind === 'phone' ? PHONE.test(form.contactValue.trim()) : EMAIL.test(form.contactValue.trim()));
   return (
-    <InputAction
+    <InputDialog
+      open={open}
+      onOpenChange={onOpenChange}
       label={t('bk.edit')}
-      disabled={busy}
+      busy={busy}
       canSend={valid}
       onSend={() =>
         onSent(
@@ -928,27 +1076,35 @@ function EditBooking({
         onChange={value => set({note: value})}
         multiline
         maxLength={280}
+        counter
       />
-    </InputAction>
+    </InputDialog>
   );
 }
 
+/**
+ * Pagos y reembolsos: the net received, a calculated refund (never shown as issued) and the
+ * ledger stay on the page; "Registrar movimiento" opens the form in a dialog.
+ */
 function Payments({
   data,
+  open,
+  onOpenChange,
   onRecorded,
-  setNotice,
   seatsLeft,
   refundCalc,
 }: {
   data: BookingData;
-  onRecorded: () => void;
-  setNotice: (notice: Notice) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRecorded: (notice: Notice) => void;
   seatsLeft: number | null;
   refundCalc: number | null;
 }) {
   const {t, lang} = useStaffT();
   const me = useMe();
   const ids = useId();
+  const formId = useId();
   const outcome = useOutcome();
   const {run, busy} = useWrite();
   const b = data.booking;
@@ -959,6 +1115,7 @@ function Payments({
   const [reverses, setReverses] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [problem, setProblem] = useState<Notice>(null);
   const reversed = new Set(data.payments.map(p => p.reverses_payment_id).filter(Boolean));
   const reversible = data.payments.filter(p => p.kind !== 'reversal' && !reversed.has(p.id));
   const methods = [
@@ -989,40 +1146,55 @@ function Payments({
       reversesPaymentId: kind === 'reversal' ? reverses || null : null,
       note: note.trim() || null,
     });
-    const after = result.kind === 'ok' ? (result.data.outcome as {status?: string} | null) : null;
-    setNotice(
+    if (result.kind !== 'ok') {
+      // The dialog stays open, with what failed and why next to its button.
+      setProblem(outcome(result, ''));
+      return;
+    }
+    const after = result.data.outcome as {status?: string} | null;
+    setProblem(null);
+    setAmount('');
+    setReference('');
+    setNote('');
+    setReverses('');
+    onOpenChange(false);
+    onRecorded(
       after?.status === 'exception' && b.status !== 'exception'
         ? {tone: 'problem', text: t('bk.toException')}
-        : outcome(result, t('bk.recorded')),
+        : {tone: 'ok', text: t('bk.recorded')},
     );
-    if (result.kind === 'ok') {
-      setAmount('');
-      setReference('');
-      setNote('');
-      setReverses('');
-    }
-    onRecorded();
   };
 
   return (
-    <Card title={t('bk.payments')}>
-      <p className={cn('text-base font-medium leading-6 text-ink', numbers)}>
-        {t('bk.net', {amount: formatMoney(b.net, 'USD', lang)})}
-      </p>
-      {refundCalc !== null ? (
-        <p className={cn('text-sm leading-5 text-ink', numbers)}>
-          {t('bk.calcRefund', {amount: formatMoney(refundCalc, 'USD', lang)})}
+    <Panel
+      flush
+      title={t('bk.payments')}
+      actions={
+        <Button variant="secondary" onClick={() => onOpenChange(true)}>
+          <Plus aria-hidden="true" />
+          {t('bk.record')}
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-1 px-4 sm:px-6">
+        <p className={cn('text-lg font-semibold leading-7 text-ink', numbers)}>
+          {t('bk.net', {amount: formatMoney(b.net, 'USD', lang)})}
         </p>
-      ) : null}
+        {refundCalc !== null ? (
+          <p className={cn('text-sm leading-5 text-ink', numbers)}>
+            {t('bk.calcRefund', {amount: formatMoney(refundCalc, 'USD', lang)})}
+          </p>
+        ) : null}
+      </div>
       {data.payments.length ? (
-        <ul className="divide-y divide-border/70">
+        <ul className={flushList}>
           {data.payments.map(p => (
-            <li key={p.id} className="space-y-0.5 py-2 text-sm leading-5 text-ink">
+            <li key={p.id} className={cn(rowItem, 'flex flex-col gap-0.5 text-sm leading-5 text-ink')}>
               <p className={cn('font-medium', numbers)}>
                 {t(`kind.${p.kind}`)}: {formatMoney(p.amount_cents, p.currency, lang)} · {t(`method.${p.method}`)}
                 {p.external_reference ? ` · ${p.external_reference}` : ''}
               </p>
-              <p className={helper}>
+              <p className={cn(helper, numbers)}>
                 {t('bk.payBy', {who: p.recorded_by, date: formatShortDate(p.recorded_at, lang)})}
               </p>
               {p.note ? <p className={helper}>{p.note}</p> : null}
@@ -1030,39 +1202,62 @@ function Payments({
           ))}
         </ul>
       ) : (
-        <p className="text-sm leading-5 text-ink">{t('bk.noPayments')}</p>
+        <Empty flush>{t('bk.noPayments')}</Empty>
       )}
-      <form onSubmit={record} noValidate className="space-y-4 border-t border-border/70 pt-4">
-        <h3 className="text-sm font-semibold leading-5 text-ink">{t('bk.record')}</h3>
-        {shortOfSeats && kind === 'payment' ? (
-          <p role="status" className="rounded-2xl border-2 border-ink p-3 text-sm font-medium leading-5 text-ink">
-            {t('bk.seatsWarning')}
-          </p>
-        ) : null}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <SelectField
-            id={`${ids}-kind`}
-            label={t('bk.kind')}
-            value={kind}
-            onChange={setKind}
-            options={(['payment', 'refund', 'reversal'] as const).map(k => ({value: k, label: t(`kind.${k}`)}))}
-          />
-          {kind === 'reversal' ? (
-            <SelectField
-              id={`${ids}-reverses`}
-              label={t('bk.reverses')}
-              value={reverses}
-              onChange={setReverses}
-              options={[
-                {value: '', label: '—'},
-                ...reversible.map(p => ({
-                  value: p.id,
-                  label: `${t(`kind.${p.kind}`)} · ${formatMoney(p.amount_cents, p.currency, lang)} · ${formatShortDate(p.recorded_at, lang)}`,
-                })),
-              ]}
+
+      <Dialog
+        open={open}
+        onOpenChange={next => {
+          if (!next) {
+            setProblem(null);
+            setError(null);
+          }
+          onOpenChange(next);
+        }}
+        title={t('bk.record')}
+        closeLabel={t('staff.close')}
+        footer={
+          <div>
+            <NoticeLine notice={problem} className="mb-3" />
+            <FormFooter
+              formId={formId}
+              label={t('bk.record')}
+              busy={busy}
+              disabled={kind === 'reversal' && !reverses}
+              onCancel={() => onOpenChange(false)}
             />
-          ) : (
-            <>
+          </div>
+        }
+      >
+        <form id={formId} onSubmit={record} noValidate className="flex flex-col gap-4">
+          {shortOfSeats && kind === 'payment' ? (
+            <Callout role="status">
+              <p className="font-medium">{t('bk.seatsWarning')}</p>
+            </Callout>
+          ) : null}
+          <div className="grid grid-cols-1 gap-4 min-[22rem]:grid-cols-2">
+            <SelectField
+              id={`${ids}-kind`}
+              label={t('bk.kind')}
+              value={kind}
+              onChange={setKind}
+              options={(['payment', 'refund', 'reversal'] as const).map(k => ({value: k, label: t(`kind.${k}`)}))}
+            />
+            {kind === 'reversal' ? (
+              <SelectField
+                id={`${ids}-reverses`}
+                label={t('bk.reverses')}
+                value={reverses}
+                onChange={setReverses}
+                options={[
+                  {value: '', label: '—'},
+                  ...reversible.map(p => ({
+                    value: p.id,
+                    label: `${t(`kind.${p.kind}`)} · ${formatMoney(p.amount_cents, p.currency, lang)} · ${formatShortDate(p.recorded_at, lang)}`,
+                  })),
+                ]}
+              />
+            ) : (
               <SelectField
                 id={`${ids}-method`}
                 label={t('bk.method')}
@@ -1070,6 +1265,10 @@ function Payments({
                 onChange={setMethod}
                 options={methods.map(m => ({value: m, label: t(`method.${m}`)}))}
               />
+            )}
+          </div>
+          {kind === 'reversal' ? null : (
+            <div className="grid grid-cols-1 gap-4 min-[22rem]:grid-cols-2">
               <TextField
                 id={`${ids}-amount`}
                 label={t('bk.amount')}
@@ -1085,14 +1284,11 @@ function Payments({
                 onChange={setReference}
                 maxLength={80}
               />
-            </>
+            </div>
           )}
-        </div>
-        <TextField id={`${ids}-note`} label={t('bk.payNote')} value={note} onChange={setNote} maxLength={280} />
-        <Button type="submit" variant="primary" disabled={busy || (kind === 'reversal' && !reverses)}>
-          {busy ? t('flow.sending') : t('bk.record')}
-        </Button>
-      </form>
-    </Card>
+          <TextField id={`${ids}-note`} label={t('bk.payNote')} value={note} onChange={setNote} maxLength={280} />
+        </form>
+      </Dialog>
+    </Panel>
   );
 }

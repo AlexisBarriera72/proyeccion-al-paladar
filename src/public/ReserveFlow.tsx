@@ -2,11 +2,11 @@
 // The draft (with its mutation ID and management token) is kept in this tab's storage, so a
 // lost response can be retried safely and the link rebuilt. The screen says only what the
 // server answered.
-import {useEffect, useId, useRef, useState, type FormEvent} from 'react';
-import {AnimatePresence, motion} from 'motion/react';
-import {Copy, ExternalLink, MessageCircle, Minus, Plus} from 'lucide-react';
+import {useEffect, useId, useRef, useState, type FormEvent, type ReactNode} from 'react';
+import {AnimatePresence, motion, useReducedMotion} from 'motion/react';
+import {CalendarDays, CircleCheck, Copy, Hourglass, MessageCircle, Minus, Plus} from 'lucide-react';
 import type {BookingStatus, ManageView, PublicSession} from '../../shared/types.ts';
-import {formatLongDate, formatTime} from '../../shared/time.ts';
+import {formatLongDate, formatShortDate, formatTime} from '../../shared/time.ts';
 import {useT} from '../lib/i18n.tsx';
 import {useConfig} from '../lib/config.tsx';
 import {postJson} from '../lib/api.ts';
@@ -15,12 +15,13 @@ import {readJson, remove, writeJson} from '../lib/storage.ts';
 import {copyText} from '../lib/copy.ts';
 import {formatMoney, pick} from '../lib/format.ts';
 import {SPRING} from '../lib/motion.ts';
-import {helper, numbers} from '../lib/styles.ts';
+import {detailTitle, helper, inset, numbers, sectionTitle} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Dialog} from '../components/ui/dialog.tsx';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
 import {Field, Input, Textarea, describedBy} from '../components/ui/field.tsx';
 import {Checkbox, Choices} from '../components/ui/choice.tsx';
+import {Disclosure} from '../components/ui/disclosure.tsx';
 import {Price} from '../components/Price.tsx';
 import {PolicyBlock, WhenText} from './SessionDetail.tsx';
 import {CalendarExport} from './CalendarExport.tsx';
@@ -96,6 +97,7 @@ export function ReserveFlow({
   const [problem, setProblem] = useState<Problem>(null);
   const [sending, setSending] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const reduce = useReducedMotion();
   const step: Step = receipt ? 5 : draft.step;
 
   const setDraft = (patch: Partial<Draft>) =>
@@ -284,20 +286,35 @@ export function ReserveFlow({
   const people = (n: number) => (n === 1 ? t('flow.person') : t('flow.people', {count: n}));
 
   const heading = (text: string) => (
-    <h3 ref={headingRef} tabIndex={-1} className="text-lg font-semibold leading-7 text-ink focus:outline-none">
+    <h3 ref={headingRef} tabIndex={-1} className={cn(sectionTitle, 'focus:outline-none')}>
       {text}
     </h3>
   );
+  const contactForm = `${ids}-contact-form`;
+  const reviewForm = `${ids}-review-form`;
+  const manageUrl = receipt?.token ? `${location.origin}/reservacion/${receipt.token}/` : null;
+  // The actions sit in the sheet's footer, so they stay in view on every step.
+  const actions = (back: Step | null, primary: ReactNode) => (
+    <div className="flex gap-3">
+      {back ? (
+        <Button onClick={() => go(back)} disabled={sending}>
+          {t('flow.back')}
+        </Button>
+      ) : null}
+      {primary}
+    </div>
+  );
 
   let body;
+  let footer: ReactNode = null;
   if (step === 1) {
     body = (
       <div className="space-y-4">
         {heading(t('flow.step1'))}
         <p className={helper}>{t('flow.sessionCheck')}</p>
-        <dl className="space-y-2 rounded-2xl border border-stone-300 p-4">
+        <dl className={cn(inset, 'space-y-3')}>
           <div>
-            <dt className="sr-only">{t('detail.when')}</dt>
+            <dt className="sr-only">{t('flow.step1')}</dt>
             <dd className="text-base font-medium leading-6 text-ink">{pick(session.title, lang)}</dd>
           </div>
           <div>
@@ -317,10 +334,13 @@ export function ReserveFlow({
             </dd>
           </div>
         </dl>
-        <Button variant="primary" width="full" onClick={() => go(2)}>
-          {t('flow.next')}
-        </Button>
       </div>
+    );
+    footer = actions(
+      null,
+      <Button variant="primary" className="flex-1" onClick={() => go(2)}>
+        {t('flow.next')}
+      </Button>,
     );
   } else if (step === 2) {
     const id = `${ids}-party`;
@@ -350,7 +370,7 @@ export function ReserveFlow({
                 const value = Number(event.target.value);
                 if (Number.isFinite(value)) setDraft({partySize: Math.max(min, Math.min(max, Math.round(value)))});
               }}
-              className={cn('w-24 text-center text-lg', numbers)}
+              className={cn('w-24 text-center font-semibold', numbers)}
             />
             <Button
               variant="secondary"
@@ -368,18 +388,18 @@ export function ReserveFlow({
           {session.partyMax !== null ? ` · ${t('flow.groupMax', {max: session.partyMax})}` : ''}
           {reserve && session.remaining !== null ? ` ${t('flow.groupSeats', {count: session.remaining})}` : ''}
         </p>
-        <div className="flex gap-3">
-          <Button onClick={() => go(1)}>{t('flow.back')}</Button>
-          <Button
-            variant="primary"
-            className="flex-1"
-            onClick={() => go(3)}
-            disabled={draft.partySize < min || draft.partySize > max}
-          >
-            {t('flow.next')}
-          </Button>
-        </div>
       </div>
+    );
+    footer = actions(
+      1,
+      <Button
+        variant="primary"
+        className="flex-1"
+        onClick={() => go(3)}
+        disabled={draft.partySize < min || draft.partySize > max}
+      >
+        {t('flow.next')}
+      </Button>,
     );
   } else if (step === 3) {
     const nameId = `${ids}-name`;
@@ -387,6 +407,7 @@ export function ReserveFlow({
     const noteId = `${ids}-note`;
     body = (
       <form
+        id={contactForm}
         className="space-y-4"
         noValidate
         onSubmit={event => {
@@ -442,63 +463,80 @@ export function ReserveFlow({
             onChange={event => setDraft({contactValue: event.target.value})}
           />
         </Field>
-        <Field
-          id={noteId}
-          label={t('flow.noteLabel')}
-          help={
-            <>
-              {t('flow.noteHelp')} {t('flow.noteLimit')}
-            </>
-          }
-          error={errors.note}
-        >
-          <Textarea
+        <Disclosure variant="link" summary={t('flow.addNote')} defaultOpen={Boolean(draft.note || errors.note)}>
+          <Field
             id={noteId}
-            value={draft.note}
-            maxLength={280}
-            rows={3}
-            aria-invalid={Boolean(errors.note)}
-            aria-describedby={describedBy(noteId, true, Boolean(errors.note))}
-            onChange={event => setDraft({note: event.target.value})}
-          />
-        </Field>
-        <div className="flex gap-3">
-          <Button onClick={() => go(2)}>{t('flow.back')}</Button>
-          <Button variant="primary" type="submit" className="flex-1">
-            {t('flow.next')}
-          </Button>
-        </div>
+            label={t('flow.noteLabel')}
+            help={
+              <>
+                {t('flow.noteHelp')} {t('flow.noteLimit')}
+              </>
+            }
+            error={errors.note}
+          >
+            <Textarea
+              id={noteId}
+              value={draft.note}
+              maxLength={280}
+              rows={3}
+              aria-invalid={Boolean(errors.note)}
+              aria-describedby={describedBy(noteId, true, Boolean(errors.note))}
+              onChange={event => setDraft({note: event.target.value})}
+            />
+          </Field>
+        </Disclosure>
       </form>
+    );
+    footer = actions(
+      2,
+      <Button variant="primary" type="submit" form={contactForm} className="flex-1">
+        {t('flow.next')}
+      </Button>,
     );
   } else if (step === 4) {
     const acceptId = `${ids}-accept`;
+    const rows: {label: string; value: ReactNode; edit?: Step}[] = [
+      {label: t('flow.step1'), value: pick(session.title, lang)},
+      {label: t('detail.when'), value: <WhenText session={session} />},
+      {label: t('detail.where'), value: session.venue ? session.venue.name : t('venue.tbd')},
+      {label: t('flow.step2'), value: people(draft.partySize), edit: 2},
+      {
+        label: t('detail.price'),
+        value: (
+          <span className={numbers}>
+            <Price price={session.price} />
+            {total ? ` · ${t('flow.total', {amount: total})}` : ''}
+          </span>
+        ),
+      },
+      {label: t('flow.step3'), value: `${draft.leadName} · ${draft.contactValue}`, edit: 3},
+      ...(draft.note.trim() ? [{label: t('flow.noteLabel'), value: draft.note.trim(), edit: 3 as Step}] : []),
+    ];
     body = (
-      <form className="space-y-4" noValidate onSubmit={submit}>
+      <form id={reviewForm} className="space-y-4" noValidate onSubmit={submit}>
         {heading(reserve ? t('flow.reviewReserve') : t('flow.reviewRequest'))}
         <dl className="divide-y divide-border/70 rounded-2xl border border-stone-300">
-          {[
-            [t('flow.step1'), pick(session.title, lang)],
-            [t('detail.when'), <WhenText key="w" session={session} />],
-            [t('detail.where'), session.venue ? session.venue.name : t('venue.tbd')],
-            [t('flow.step2'), people(draft.partySize)],
-            [
-              t('detail.price'),
-              <span key="p" className={numbers}>
-                <Price price={session.price} />
-                {total ? ` · ${t('flow.total', {amount: total})}` : ''}
-              </span>,
-            ],
-            [t('flow.step3'), `${draft.leadName} · ${draft.contactValue}`],
-            ...(draft.note.trim() ? [[t('flow.noteLabel'), draft.note.trim()]] : []),
-          ].map(([label, value], index) => (
-            <div key={index} className="grid gap-1 p-3 sm:grid-cols-[9rem_1fr]">
-              <dt className={helper}>{label}</dt>
-              <dd className="text-base leading-6 text-ink">{value}</dd>
+          {rows.map(row => (
+            <div key={row.label} className="grid gap-1 px-3 py-2.5 sm:grid-cols-[9rem_minmax(0,1fr)]">
+              <dt className={cn(helper, 'sm:pt-0.5')}>{row.label}</dt>
+              <dd className="flex items-start justify-between gap-2 text-base leading-6 text-ink">
+                <span className="min-w-0 [overflow-wrap:anywhere]">{row.value}</span>
+                {row.edit ? (
+                  <button
+                    type="button"
+                    onClick={() => go(row.edit!)}
+                    aria-label={t('flow.editWhat', {what: row.label})}
+                    className="-my-2.5 inline-flex min-h-11 shrink-0 items-center rounded-2xl px-2 text-sm font-medium leading-5 text-accent underline underline-offset-4 hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  >
+                    {t('flow.edit')}
+                  </button>
+                ) : null}
+              </dd>
             </div>
           ))}
         </dl>
         <section className="space-y-2">
-          <h4 className="text-sm font-semibold leading-5 text-ink">{t('detail.terms')}</h4>
+          <h4 className={sectionTitle}>{t('detail.terms')}</h4>
           <PolicyBlock policy={session.policy} />
         </section>
         {reserve ? (
@@ -538,24 +576,40 @@ export function ReserveFlow({
             ) : null}
           </div>
         ) : null}
-        <div className="flex gap-3">
-          <Button onClick={() => go(3)} disabled={sending}>
-            {t('flow.back')}
-          </Button>
-          <Button variant="primary" type="submit" className="flex-1" disabled={sending} aria-busy={sending}>
-            {sending
-              ? t('flow.sending')
-              : problem?.kind === 'lost'
-                ? t('app.retry')
-                : reserve
-                  ? t('flow.submitReserve')
-                  : t('flow.submitRequest')}
-          </Button>
-        </div>
       </form>
     );
+    footer = actions(
+      3,
+      <Button
+        variant="primary"
+        type="submit"
+        form={reviewForm}
+        className="flex-1"
+        disabled={sending}
+        aria-busy={sending}
+      >
+        {sending
+          ? t('flow.sending')
+          : problem?.kind === 'lost'
+            ? t('app.retry')
+            : reserve
+              ? t('flow.submitReserve')
+              : t('flow.submitRequest')}
+      </Button>,
+    );
   } else {
-    body = <ReceiptView session={session} receipt={receipt!} headingRef={headingRef} onStartOver={startOver} />;
+    body = <ReceiptView session={session} receipt={receipt!} manageUrl={manageUrl} headingRef={headingRef} />;
+    footer = receipt?.replaced ? null : (
+      // Phones: the guest's page on top, full width. Wider: side by side, the main action last.
+      <div className="flex flex-col gap-2 sm:flex-row-reverse sm:gap-3">
+        {manageUrl ? (
+          <a href={manageUrl} className={cn(buttonVariants({variant: 'primary'}), 'sm:flex-1')}>
+            {t('result.openLink')}
+          </a>
+        ) : null}
+        <Button onClick={startOver}>{reserve ? t('flow.startOverReserve') : t('flow.startOverRequest')}</Button>
+      </div>
+    );
   }
 
   return (
@@ -566,19 +620,33 @@ export function ReserveFlow({
       title={reserve ? t('flow.title') : t('flow.titleRequest')}
       description={`${t('flow.stepOf', {n: step})}: ${stepNames[step - 1]}`}
       closeLabel={t('app.close')}
+      footer={footer}
     >
-      <ol className="mb-5 grid grid-cols-5 gap-1" aria-hidden="true">
+      <ol className="mb-4 grid grid-cols-5 gap-1" aria-hidden="true">
         {stepNames.map((name, index) => (
           <li key={name} className={cn('h-1.5 rounded-full', index < step ? 'bg-accent' : 'bg-stone-200')} />
         ))}
       </ol>
+      {step > 1 && step < 5 ? (
+        // Every step names the session it is for.
+        <p className={cn(helper, 'mb-5 flex items-start gap-2')}>
+          <CalendarDays className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span className={numbers}>
+            <span className="font-medium text-ink">{pick(session.title, lang)}</span>
+            {' · '}
+            {session.startsAt === null
+              ? t('status.date_tbd')
+              : `${formatShortDate(session.startsAt, lang)}, ${formatTime(session.startsAt, lang)}`}
+          </span>
+        </p>
+      ) : null}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={step}
-          initial={{opacity: 0, x: 12}}
+          initial={reduce ? {opacity: 1} : {opacity: 0, x: 12}}
           animate={{opacity: 1, x: 0}}
-          exit={{opacity: 0, x: -12}}
-          transition={SPRING}
+          exit={reduce ? {opacity: 1} : {opacity: 0, x: -12}}
+          transition={reduce ? {duration: 0} : SPRING}
         >
           {body}
         </motion.div>
@@ -590,28 +658,34 @@ export function ReserveFlow({
 function ReceiptView({
   session,
   receipt,
+  manageUrl,
   headingRef,
-  onStartOver,
 }: {
   session: PublicSession;
   receipt: Receipt;
+  manageUrl: string | null;
   headingRef: React.RefObject<HTMLHeadingElement | null>;
-  onStartOver: () => void;
 }) {
   const {t, lang} = useT();
   const [copied, setCopied] = useState<string | null>(null);
   const [dmState, setDmState] = useState<string | null>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
-  const manageUrl = receipt.token ? `${location.origin}/reservacion/${receipt.token}/` : null;
-  const when = session.startsAt === null ? t('status.date_tbd') : `${formatLongDate(session.startsAt, lang)}`;
-  const time = session.startsAt === null ? '' : formatTime(session.startsAt, lang);
   const count = receipt.partySize === 1 ? t('flow.person') : t('flow.people', {count: receipt.partySize});
-  const dm = t('result.dmMessage', {reference: receipt.reference, date: when, time, count});
+  // The time goes in parentheses, so "p. m." never runs into the sentence's period.
+  const dm =
+    session.startsAt === null
+      ? t('result.dmMessageTbd', {reference: receipt.reference, count})
+      : t('result.dmMessage', {
+          reference: receipt.reference,
+          date: formatLongDate(session.startsAt, lang),
+          time: formatTime(session.startsAt, lang),
+          count,
+        });
 
   if (receipt.replaced) {
     return (
       <div className="space-y-4">
-        <h3 ref={headingRef} tabIndex={-1} className="text-lg font-semibold leading-7 text-ink focus:outline-none">
+        <h3 ref={headingRef} tabIndex={-1} className={cn(sectionTitle, 'focus:outline-none')}>
           {t('flow.step5')}
         </h3>
         <p role="status" className="text-base leading-6 text-ink">
@@ -642,19 +716,22 @@ function ReceiptView({
 
   return (
     <div className="space-y-5">
-      <div className="space-y-2" role="status" aria-live="polite">
-        <h3
-          ref={headingRef}
-          tabIndex={-1}
-          className="text-[24px] font-medium leading-[1.2] tracking-[-0.025em] text-ink focus:outline-none"
-        >
-          {headline}
-        </h3>
+      <div className="flex items-start gap-3" role="status" aria-live="polite">
         {receipt.status === 'confirmed' ? (
-          <p className="text-base leading-6 text-ink">{t('result.confirmedHelp')}</p>
-        ) : null}
+          <CircleCheck className="mt-0.5 size-6 shrink-0 text-ink" aria-hidden="true" />
+        ) : (
+          <Hourglass className="mt-0.5 size-6 shrink-0 text-ink" aria-hidden="true" />
+        )}
+        <div className="space-y-1">
+          <h3 ref={headingRef} tabIndex={-1} className={cn(detailTitle, 'focus:outline-none')}>
+            {headline}
+          </h3>
+          {receipt.status === 'confirmed' ? (
+            <p className="text-base leading-6 text-ink">{t('result.confirmedHelp')}</p>
+          ) : null}
+        </div>
       </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-2xl border border-stone-300 p-4">
+      <dl className={cn(inset, 'grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2')}>
         <dt className={helper}>{t('result.reference')}</dt>
         <dd className={cn('text-base font-semibold leading-6 text-ink', numbers)}>{receipt.reference}</dd>
         <dt className={helper}>{t('detail.when')}</dt>
@@ -666,9 +743,9 @@ function ReceiptView({
       </dl>
       {manageUrl ? (
         <div className="space-y-2">
-          <p className="text-sm font-semibold leading-5 text-ink">{t('result.link')}</p>
-          <p className="break-all rounded-2xl bg-stone-100 p-3 text-sm leading-5 text-ink">{manageUrl}</p>
-          <div className="flex flex-wrap gap-2">
+          <p className={sectionTitle}>{t('result.link')}</p>
+          <p className="break-all rounded-2xl border border-stone-300 p-3 text-sm leading-5 text-ink">{manageUrl}</p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <Button
               onClick={async () =>
                 setCopied((await copyText(manageUrl)) ? t('result.linkCopied') : t('result.copyFailed'))
@@ -677,16 +754,13 @@ function ReceiptView({
               <Copy aria-hidden="true" />
               {t('result.copyLink')}
             </Button>
-            <a href={manageUrl} className={buttonVariants({variant: 'ghost'})}>
-              <ExternalLink aria-hidden="true" />
-              {t('result.openLink')}
-            </a>
+            <p role="status" aria-live="polite" className={helper}>
+              {copied}
+            </p>
           </div>
-          <p role="status" aria-live="polite" className={helper}>
-            {copied}
-          </p>
         </div>
       ) : null}
+      <p className="text-sm font-medium leading-5 text-ink">{t('result.noMessage')}</p>
       <CalendarExport
         session={session}
         status={receipt.status}
@@ -694,24 +768,21 @@ function ReceiptView({
         partySize={receipt.partySize}
         manageUrl={manageUrl}
       />
-      <p className="text-sm font-medium leading-5 text-ink">{t('result.noMessage')}</p>
-      <section className="space-y-2 border-t border-border/70 pt-4" aria-labelledby="dm-heading">
-        <h4 id="dm-heading" className="text-sm font-semibold leading-5 text-ink">
-          {t('result.instagram')}
-        </h4>
-        <p className={helper}>{t('result.instagramHelp')}</p>
-        <Textarea ref={messageRef} readOnly value={dm} rows={3} aria-label={t('result.instagram')} />
-        <Button onClick={copyDm}>
-          <MessageCircle aria-hidden="true" />
-          {t('result.instagram')}
-        </Button>
-        <p role="status" aria-live="polite" className={helper}>
-          {dmState}
-        </p>
-      </section>
-      <Button variant="ghost" onClick={onStartOver} className="-ml-3">
-        {t('flow.edit')}
-      </Button>
+      <div className="border-t border-border/70 pt-4">
+        <Disclosure summary={t('result.instagram')}>
+          <div className="space-y-2">
+            <p className={helper}>{t('result.instagramHelp')}</p>
+            <Textarea ref={messageRef} readOnly value={dm} rows={3} aria-label={t('result.instagram')} />
+            <Button onClick={copyDm}>
+              <MessageCircle aria-hidden="true" />
+              {t('result.copyAndOpen')}
+            </Button>
+            <p role="status" aria-live="polite" className={helper}>
+              {dmState}
+            </p>
+          </div>
+        </Disclosure>
+      </div>
     </div>
   );
 }

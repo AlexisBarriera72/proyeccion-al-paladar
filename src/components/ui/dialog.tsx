@@ -1,6 +1,7 @@
 // Dialogs and sheets on Radix (focus trap, Escape), moved by the shared spring. A sheet rises
 // from the bottom on phones and slides in from the right on wide screens. Our dialogs open from
 // ordinary buttons (no Radix Trigger), so focus goes back to whatever was focused on open.
+// The footer never scrolls, so a form's main action stays in view.
 import {Dialog as D} from 'radix-ui';
 import {AnimatePresence, motion, useReducedMotion} from 'motion/react';
 import {X} from 'lucide-react';
@@ -16,6 +17,10 @@ interface Props {
   closeLabel: string;
   children: ReactNode;
   kind?: 'dialog' | 'sheet';
+  /** Wide sheets (520px) hold staff forms; the default is 440px. */
+  size?: 'default' | 'wide';
+  /** Actions that stay in view below the scrolling body. */
+  footer?: ReactNode;
   className?: string;
 }
 
@@ -27,6 +32,8 @@ export function Dialog({
   closeLabel,
   children,
   kind = 'dialog',
+  size = 'default',
+  footer,
   className,
 }: Props) {
   const reduce = useReducedMotion();
@@ -71,7 +78,10 @@ export function Dialog({
                   'fixed z-50 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-surface',
                   'shadow-[0_1px_2px_rgba(28,25,23,0.04),0_8px_24px_rgba(28,25,23,0.06)] focus:outline-none',
                   sheet
-                    ? 'inset-x-0 bottom-0 rounded-b-none sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[440px] sm:rounded-none sm:rounded-l-2xl'
+                    ? cn(
+                        'inset-x-0 bottom-0 rounded-b-none sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:rounded-none sm:rounded-l-2xl',
+                        size === 'wide' ? 'sm:w-[520px]' : 'sm:w-[440px]',
+                      )
                     : 'inset-x-4 top-[8dvh] mx-auto max-w-lg sm:inset-x-0',
                   className,
                 )}
@@ -95,6 +105,11 @@ export function Dialog({
                   </D.Close>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
+                {footer ? (
+                  <div className="border-t border-border/70 bg-surface p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
+                    {footer}
+                  </div>
+                ) : null}
               </motion.div>
             </D.Content>
           </D.Portal>
