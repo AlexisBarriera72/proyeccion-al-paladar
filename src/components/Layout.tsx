@@ -41,7 +41,7 @@ function SiteLinks({onPick, className}: {onPick?: () => void; className?: string
       <Link
         to="/"
         onClick={onPick}
-        aria-current={path === '/' ? 'page' : undefined}
+        aria-current={path === '/' || path.startsWith('/funciones/') ? 'page' : undefined}
         className={cn(navLink, current, className)}
       >
         <CalendarDays aria-hidden="true" />
@@ -74,7 +74,6 @@ function SiteLinks({onPick, className}: {onPick?: () => void; className?: string
         }}
         className={cn(navLink, className)}
         lang={lang === 'es' ? 'en' : 'es'}
-        aria-label={t('app.langLabel')}
       >
         <Languages aria-hidden="true" />
         {t('app.lang')}
@@ -86,7 +85,7 @@ function SiteLinks({onPick, className}: {onPick?: () => void; className?: string
 export function SiteHeader() {
   const {t} = useT();
   const logo = photos.logo;
-  // Phones: the links sit behind "Menú", opening in the page flow (no overlay). Wider: inline.
+  // Below 768px the links sit behind "Menú", opening in the page flow (no overlay). Wider: inline.
   const [open, setOpen] = useState(false);
   return (
     <header className="border-b border-border/70 bg-surface">
@@ -106,7 +105,7 @@ export function SiteHeader() {
               className="size-10 shrink-0 rounded-full border border-border bg-white"
             />
           ) : null}
-          <span className="min-w-0 leading-tight [overflow-wrap:anywhere]">
+          <span className="min-w-0 leading-tight [overflow-wrap:break-word]">
             <span className="block text-base font-semibold tracking-[-0.01em] text-ink">{t('app.name')}</span>
             <span className="block text-sm leading-5 text-muted">{t('app.tagline')}</span>
           </span>
@@ -118,7 +117,7 @@ export function SiteHeader() {
           onClick={() => setOpen(value => !value)}
           className={cn(
             navLink,
-            'shrink-0 border border-stone-400 max-[23rem]:w-11 max-[23rem]:justify-center max-[23rem]:px-0 sm:hidden',
+            'shrink-0 border border-stone-400 max-[23rem]:w-11 max-[23rem]:justify-center max-[23rem]:px-0 md:hidden',
           )}
         >
           {open ? <X aria-hidden="true" /> : <MenuIcon aria-hidden="true" />}
@@ -129,11 +128,11 @@ export function SiteHeader() {
           id="site-menu"
           aria-label={t('app.nav')}
           className={cn(
-            'w-full flex-col gap-1 border-t border-border/70 py-2 sm:flex sm:w-auto sm:flex-row sm:items-center sm:border-0 sm:py-0',
+            'w-full flex-col gap-1 border-t border-border/70 py-2 md:flex md:w-auto md:flex-row md:items-center md:border-0 md:py-0',
             open ? 'flex' : 'hidden',
           )}
         >
-          <SiteLinks onPick={() => setOpen(false)} className="w-full sm:w-auto" />
+          <SiteLinks onPick={() => setOpen(false)} className="w-full md:w-auto" />
         </nav>
       </div>
     </header>

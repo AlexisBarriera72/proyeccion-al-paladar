@@ -2,7 +2,7 @@
 // the required facts in view: the phone menu, the announced policy's quote, the reservation
 // sheet's note, "Cambiar" links and the Instagram handoff.
 import {expect, test} from '@playwright/test';
-import {isDesktop} from './fixtures.ts';
+import {invisibleInMain, isDesktop} from './fixtures.ts';
 
 test('phones keep the site links behind "Menú"; computers show them inline', async ({page}) => {
   await page.goto('/');
@@ -51,6 +51,8 @@ test('the sheet names the session, edits from the review, and keeps the Instagra
   await step('Sesión');
   await dialog.getByRole('button', {name: 'Continuar'}).click();
   await step('Tu grupo');
+  // Focus follows the step, after the previous step's exit animation, so the change is announced.
+  await expect(dialog.getByRole('heading', {name: 'Tu grupo', exact: true})).toBeFocused();
   await expect(dialog.getByText('DEMO · Cena inspirada en Shrek', {exact: true})).toBeVisible();
   await dialog.getByRole('button', {name: 'Continuar'}).click();
   await step('Datos de contacto');
@@ -74,6 +76,9 @@ test('the sheet names the session, edits from the review, and keeps the Instagra
   await expect(dialog).toContainText('3 personas');
   await dialog.getByRole('button', {name: 'Enviar solicitud'}).click();
   await expect(dialog.getByText(/^Solicitud recibida/)).toBeVisible();
+  await expect(dialog.getByRole('heading', {name: /^Solicitud recibida/})).toBeFocused();
+  // The receipt still names its session (DEMO included), in the sheet's fixed header.
+  await expect(dialog.getByText('DEMO · Cena inspirada en Shrek', {exact: true})).toBeInViewport();
   // The handoff is optional: closed until asked for, and its message reads cleanly.
   const handoff = dialog.getByRole('button', {name: 'Avísales por Instagram'});
   await expect(handoff).toHaveAttribute('aria-expanded', 'false');
@@ -88,4 +93,38 @@ test('the sheet names the session, edits from the review, and keeps the Instagra
   await expect(dialog.getByRole('button', {name: 'Copiar mensaje y abrir Instagram'})).toBeVisible();
   await expect(dialog.getByRole('button', {name: 'Hacer otra solicitud'})).toBeVisible();
   await expect(dialog.getByRole('link', {name: 'Ver mi reservación'})).toBeVisible();
+});
+
+test('every guest page finishes showing its content (none stays invisible)', async ({page}) => {
+  for (const path of [
+    '/',
+    '/funciones/demo-prueba-a/',
+    '/funciones/demo-shrek-1/',
+    '/politicas/',
+    '/reservacion/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/',
+    '/no-existe/',
+  ]) {
+    await page.goto(path);
+    expect(await invisibleInMain(page), path).toEqual([]);
+  }
+});
+
+test('a missing acceptance brings its checkbox and error into view', async ({page}) => {
+  await page.goto('/funciones/demo-prueba-a/');
+  await page.getByRole('button', {name: 'Reservar plazas'}).click();
+  const dialog = page.getByRole('dialog');
+  const step = (title: string | RegExp) =>
+    expect(dialog.getByRole('heading', {name: title, exact: true})).toBeVisible();
+  await step('Sesión');
+  await dialog.getByRole('button', {name: 'Continuar'}).click();
+  await step('Tu grupo');
+  await dialog.getByRole('button', {name: 'Continuar'}).click();
+  await step('Datos de contacto');
+  await dialog.getByLabel('Nombre de quien reserva').fill('Cliente e2e sin aceptar');
+  await dialog.getByRole('textbox', {name: 'Teléfono'}).fill('787-555-0144');
+  await dialog.getByRole('button', {name: 'Continuar'}).click();
+  await step('Revisa tu reservación');
+  await dialog.getByRole('button', {name: 'Reservar plazas'}).click();
+  await expect(dialog.getByRole('checkbox', {name: 'Acepto estas condiciones.'})).toBeFocused();
+  await expect(dialog.getByText('Acepta las condiciones para continuar.')).toBeInViewport();
 });

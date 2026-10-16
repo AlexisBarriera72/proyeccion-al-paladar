@@ -235,26 +235,29 @@ function MiniMonth({
   );
 }
 
+/** The next date: an inset with a fixed height, so the panel doesn't move when it arrives. */
 function NextCard({next, onOpen}: {next: PublicSession; onOpen: (session: PublicSession) => void}) {
   const {t, lang} = useT();
   return (
-    <div className="flex gap-4 rounded-2xl border border-stone-300 p-4">
-      {next.startsAt !== null ? <DateStub ms={next.startsAt} /> : null}
-      <div className="min-w-0 flex-1 space-y-2">
-        <p className={helper}>{t('intro.next')}</p>
-        <p className="text-base font-medium leading-6 text-ink">{pick(next.title, lang)}</p>
-        {next.startsAt !== null ? (
-          <p className={cn('text-sm leading-5 text-ink first-letter:uppercase', numbers)}>
-            <span className="sr-only">{formatLongDate(next.startsAt, lang)}, </span>
-            {formatTime(next.startsAt, lang)}
-          </p>
-        ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <AvailabilityBadge availability={next.availability} />
-          <Button variant="primary" onClick={() => onOpen(next)}>
-            {t('action.view')}
-          </Button>
+    <div className={cn(inset, 'flex h-[176px] flex-col justify-between gap-3')}>
+      <div className="flex gap-3">
+        {next.startsAt !== null ? <DateStub ms={next.startsAt} /> : null}
+        <div className="min-w-0 flex-1">
+          <p className={helper}>{t('intro.next')}</p>
+          <p className="line-clamp-2 text-base font-medium leading-6 text-ink">{pick(next.title, lang)}</p>
+          {next.startsAt !== null ? (
+            <p className={cn('text-sm leading-5 text-ink', numbers)}>
+              <span className="sr-only">{formatLongDate(next.startsAt, lang)}, </span>
+              {formatTime(next.startsAt, lang)}
+            </p>
+          ) : null}
         </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <AvailabilityBadge availability={next.availability} />
+        <Button variant="primary" onClick={() => onOpen(next)}>
+          {t('action.view')}
+        </Button>
       </div>
     </div>
   );
@@ -273,27 +276,23 @@ function Intro({
 }) {
   const {t} = useT();
   return (
-    <section aria-labelledby="intro-heading" className="space-y-6">
+    <section aria-labelledby="intro-heading" className="space-y-5">
       {next === 'loading' ? (
-        <div aria-hidden="true" className="h-[164px] rounded-2xl bg-stone-100" />
+        <div aria-hidden="true" className="h-[176px] rounded-2xl bg-stone-100" />
       ) : next ? (
         <NextCard next={next} onOpen={onOpen} />
       ) : null}
-      <div className="space-y-4">
-        <Photo
-          slot="room"
-          sizes="(min-width: 1024px) 312px, (min-width: 640px) 240px, 100vw"
-          priority={side}
-          className="sm:max-w-60 lg:max-w-none"
-        />
+      <div className="grid grid-cols-[120px_minmax(0,1fr)] items-start gap-4">
+        <Photo slot="room" sizes="120px" priority={side} caption={false} />
         <div className="space-y-1">
           <h2 id="intro-heading" className={detailTitle}>
             {t('app.motto')}
           </h2>
           <p className={helper}>{t('intro.quoteSource')}</p>
         </div>
-        <p className="text-base leading-6 text-ink">{t('intro.body')}</p>
       </div>
+      <p className={helper}>{t('photo.caption')}</p>
+      <p className="text-base leading-6 text-ink">{t('intro.body')}</p>
       {side ? <p className={helper}>{t('intro.pick')}</p> : null}
     </section>
   );

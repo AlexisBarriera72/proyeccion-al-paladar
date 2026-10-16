@@ -86,8 +86,12 @@ export function WhenText({session}: {session: PublicSession}) {
     <span className={numbers}>
       <span className="first-letter:uppercase">{formatLongDate(session.startsAt, lang)}</span>
       {', '}
-      {formatTime(session.startsAt, lang)}
-      {session.endsAt ? `–${formatTime(session.endsAt, lang)}` : ''}{' '}
+      <span className="whitespace-nowrap">{formatTime(session.startsAt, lang)}</span>
+      {session.endsAt ? (
+        <>
+          –<span className="whitespace-nowrap">{formatTime(session.endsAt, lang)}</span>
+        </>
+      ) : null}{' '}
       <span className="text-muted">({t('detail.tz')})</span>
     </span>
   );

@@ -9,7 +9,6 @@ export const es = {
   'app.policies': 'Condiciones',
   'app.calendar': 'Calendario',
   'app.lang': 'English',
-  'app.langLabel': 'Ver el sitio en inglés',
   'app.loading': 'Cargando…',
   'app.retry': 'Intentar de nuevo',
   'app.close': 'Cerrar',

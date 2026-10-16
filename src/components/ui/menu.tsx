@@ -24,7 +24,7 @@ export interface MenuAction {
 }
 
 const item =
-  'flex min-h-11 cursor-pointer select-none items-center gap-3 rounded-xl px-3 text-sm leading-5 text-ink outline-none ' +
+  'flex min-h-11 cursor-pointer select-none items-center gap-3 rounded-2xl px-3 text-sm leading-5 text-ink outline-none ' +
   'data-[highlighted]:bg-stone-100 data-[highlighted]:outline-2 data-[highlighted]:-outline-offset-2 data-[highlighted]:outline-accent ' +
   'data-[disabled]:cursor-not-allowed data-[disabled]:opacity-60 [&_svg]:size-4 [&_svg]:shrink-0';
 
@@ -81,7 +81,8 @@ export function Menu({
             run?.();
           }}
           className={cn(
-            'z-50 min-w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-border/50 bg-surface p-1',
+            'z-50 min-w-[min(14rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-2xl border border-border/50 bg-surface p-1',
+            'max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto',
             'shadow-[0_1px_2px_rgba(28,25,23,0.04),0_8px_24px_rgba(28,25,23,0.06)]',
           )}
         >

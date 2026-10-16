@@ -23,13 +23,14 @@ export function Switch<V extends string>({
         if (next) onChange(next as V);
       }}
       aria-label={label}
-      className="inline-flex rounded-2xl border border-stone-400 bg-surface p-1"
+      // 44px segments, and they wrap rather than run past a narrow screen (200% zoom).
+      className="inline-flex max-w-full flex-wrap rounded-2xl border border-stone-400 bg-surface"
     >
       {options.map(option => (
         <G.Item
           key={option.value}
           value={option.value}
-          className="inline-flex min-h-9 items-center gap-2 rounded-xl px-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent data-[state=on]:bg-ink data-[state=on]:text-white [&_svg]:size-4"
+          className="inline-flex min-h-11 items-center gap-2 rounded-2xl px-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent data-[state=on]:bg-ink data-[state=on]:text-white [&_svg]:size-4"
         >
           {option.label}
         </G.Item>

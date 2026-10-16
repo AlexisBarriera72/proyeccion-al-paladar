@@ -124,7 +124,6 @@ function LangButton() {
       type="button"
       onClick={() => setLang(lang === 'es' ? 'en' : 'es')}
       lang={lang === 'es' ? 'en' : 'es'}
-      aria-label={t('app.langLabel')}
       className={cn(
         'inline-flex min-h-11 items-center rounded-2xl px-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100',
         linkFocus,
@@ -168,7 +167,7 @@ function AccountMenu({me}: {me: Me}) {
           align="end"
           sideOffset={8}
           collisionPadding={16}
-          className="z-50 min-w-56 max-w-[calc(100vw-2rem)] rounded-2xl border border-border/50 bg-surface p-1 shadow-[0_1px_2px_rgba(28,25,23,0.04),0_8px_24px_rgba(28,25,23,0.06)]"
+          className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[min(14rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-2xl border border-border/50 bg-surface p-1 shadow-[0_1px_2px_rgba(28,25,23,0.04),0_8px_24px_rgba(28,25,23,0.06)]"
         >
           <M.Label className="break-all px-3 py-2 text-sm leading-5 text-muted">
             {t('staff.signedIn', {email: me.email, role})}
@@ -176,7 +175,7 @@ function AccountMenu({me}: {me: Me}) {
           <M.Separator className="my-1 h-px bg-border/70" />
           <M.Item
             asChild
-            className="flex min-h-11 cursor-pointer select-none items-center gap-3 rounded-xl px-3 text-sm leading-5 text-ink outline-none data-[highlighted]:bg-stone-100 data-[highlighted]:outline-2 data-[highlighted]:-outline-offset-2 data-[highlighted]:outline-accent"
+            className="flex min-h-11 cursor-pointer select-none items-center gap-3 rounded-2xl px-3 text-sm leading-5 text-ink outline-none data-[highlighted]:bg-stone-100 data-[highlighted]:outline-2 data-[highlighted]:-outline-offset-2 data-[highlighted]:outline-accent"
           >
             <a href="/">{t('staff.viewSite')}</a>
           </M.Item>
@@ -243,7 +242,8 @@ function SectionsSheet({me, current, counts}: {me: Me; current: string; counts: 
         }}
       >
         <MenuIcon aria-hidden="true" />
-        {t('nav.sections')}
+        {/* Below 23rem the word is read, not shown, so the name keeps its room. */}
+        <span className="max-[23rem]:sr-only">{t('nav.sections')}</span>
         {waiting ? (
           <>
             <span aria-hidden="true" className="size-2 rounded-full bg-ink" />
@@ -326,12 +326,12 @@ function Frame({me, children}: {me: Me | null; children: ReactNode}) {
         ) : null}
         <div className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8">
           <div className="flex min-h-14 items-center justify-between gap-3 py-2 lg:min-h-16">
-            <div className="min-w-0">
-              <p className="truncate text-base font-semibold leading-6 text-ink">
+            <div className="min-w-0 flex-1 [overflow-wrap:break-word]">
+              <p className="text-base font-semibold leading-6 text-ink">
                 {t('app.name')}
                 <span className="hidden font-normal text-muted lg:inline"> · {t('staff.title')}</span>
               </p>
-              <p className="truncate text-sm leading-5 text-muted lg:hidden">
+              <p className="text-sm leading-5 text-muted lg:hidden">
                 {me ? `${t('staff.title')} · ${t(`role.${me.role}`)}` : t('staff.title')}
               </p>
             </div>

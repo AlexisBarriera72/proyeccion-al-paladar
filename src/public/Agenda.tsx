@@ -73,13 +73,14 @@ export function Agenda({
                       )}
                       <p
                         className={cn(
-                          'text-base font-medium leading-6 text-ink [overflow-wrap:anywhere]',
+                          'text-base font-medium leading-6 text-ink [overflow-wrap:break-word]',
                           session.availability === 'cancelled' && 'line-through',
                         )}
                       >
                         {pick(session.title, lang)}
                       </p>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {/* The status, then the price on its own line, so every card has the same shape. */}
+                      <div className="flex flex-col items-start gap-1">
                         {/* An undated session's status would only repeat the heading. */}
                         {session.availability === 'date_tbd' ? null : (
                           <AvailabilityBadge availability={session.availability} />

@@ -1,5 +1,5 @@
 // Staff queues: Excepciones, guest requests, tonight's check-in list and the audit history.
-import {useId, useState} from 'react';
+import {useEffect, useId, useRef, useState} from 'react';
 import {motion} from 'motion/react';
 import {ArrowLeftRight, CalendarX, CircleCheck, CircleX, Inbox, MessageSquareText} from 'lucide-react';
 import {formatLongDate, formatShortDate, formatTime, prDateKey} from '../../shared/time.ts';
@@ -308,7 +308,30 @@ export function Tonight() {
   const [filter, setFilter] = useState<Arrivals>('waiting');
   const {query, reload} = useQuery<{bookings: StaffBookingRow[]; dayStart: number}>('/api/equipo/tonight');
 
+  // A check-in can take its row out of the list ("Por llegar"), so focus moves on to the next
+  // guest's button, or the previous one, or the summary line, instead of falling to the page.
+  const buttons = useRef(new Map<string, HTMLButtonElement>());
+  const order = useRef<string[]>([]);
+  const summary = useRef<HTMLParagraphElement>(null);
+  const pendingFocus = useRef<string[] | null>(null);
+  useEffect(() => {
+    const candidates = pendingFocus.current;
+    if (!candidates || busy) return;
+    pendingFocus.current = null;
+    const target = candidates.map(id => buttons.current.get(id)).find(button => button?.isConnected);
+    (target ?? summary.current)?.focus();
+  });
+  const buttonRef = (id: string) => (button: HTMLButtonElement | null) => {
+    if (button) buttons.current.set(id, button);
+    else buttons.current.delete(id);
+  };
+
   const toggle = async (b: StaffBookingRow) => {
+    const at = order.current.indexOf(b.id);
+    const after = order.current.slice(at + 1);
+    const before = order.current.slice(0, Math.max(0, at)).reverse();
+    // In "Todas" the row stays, with its other button; elsewhere it leaves the list.
+    pendingFocus.current = filter === 'all' ? [b.id, ...after, ...before] : [...after, ...before];
     const result = await run(`/api/equipo/bookings/${b.id}/actions`, {
       action: b.checked_in_at ? 'undo_check_in' : 'check_in',
       expectedVersion: b.version,
@@ -351,11 +374,17 @@ export function Tonight() {
           const shown = filter === 'waiting' ? waiting : filter === 'arrived' ? came : bookings;
           const groups = new Map<string, StaffBookingRow[]>();
           for (const b of shown) groups.set(b.session_id, [...(groups.get(b.session_id) ?? []), b]);
+          order.current = [...groups.values()].flat().map(b => b.id);
           return (
             <div className="flex flex-col gap-6">
               <Panel>
                 <div className="flex flex-col gap-3">
-                  <p className={cn('text-lg font-semibold leading-7 text-ink', numbers)} aria-live="polite">
+                  <p
+                    ref={summary}
+                    tabIndex={-1}
+                    className={cn('text-base font-semibold leading-6 text-ink focus:outline-none', numbers)}
+                    aria-live="polite"
+                  >
                     {t('ton.summary', {arrived, total})}
                   </p>
                   <Meter value={arrived} max={total} className="w-full" />
@@ -380,7 +409,7 @@ export function Tonight() {
                 />
               </div>
               {/* A filter change shows its groups at once (no replayed entry). */}
-              <motion.div initial={false} className="flex flex-col gap-6">
+              <motion.div initial={false} animate="show" className="flex flex-col gap-6">
                 {groups.size ? (
                   [...groups.values()].map(list => {
                     const first = list[0];
@@ -444,12 +473,22 @@ export function Tonight() {
                                       <CircleCheck className="size-4 shrink-0" aria-hidden="true" />
                                       {t('bk.checkedIn', {time: formatTime(b.checked_in_at, lang)})}
                                     </span>
-                                    <Button variant="secondary" disabled={busy} onClick={() => void toggle(b)}>
+                                    <Button
+                                      ref={buttonRef(b.id)}
+                                      variant="secondary"
+                                      disabled={busy}
+                                      onClick={() => void toggle(b)}
+                                    >
                                       {t('bk.undoCheckIn')}
                                     </Button>
                                   </div>
                                 ) : (
-                                  <Button variant="primary" disabled={busy} onClick={() => void toggle(b)}>
+                                  <Button
+                                    ref={buttonRef(b.id)}
+                                    variant="primary"
+                                    disabled={busy}
+                                    onClick={() => void toggle(b)}
+                                  >
                                     {t('bk.checkIn')}
                                   </Button>
                                 )

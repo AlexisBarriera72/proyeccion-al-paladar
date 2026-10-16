@@ -3,7 +3,7 @@
 // first-visit bundle stays small.
 import {AnimatePresence, motion, useReducedMotion} from 'motion/react';
 import {ChevronDown} from 'lucide-react';
-import {useId, useState, type ReactNode} from 'react';
+import {useEffect, useId, useRef, useState, type ReactNode} from 'react';
 import {cn} from '../../lib/cn.ts';
 import {SPRING} from '../../lib/motion.ts';
 
@@ -24,13 +24,28 @@ export function Disclosure({
   const [open, setOpen] = useState(defaultOpen);
   const reduce = useReducedMotion();
   const id = useId();
+  const panel = useRef<HTMLDivElement>(null);
+  // Opened by the person (not by default): once it has opened, bring it into view, so a panel that
+  // opens below a sheet's footer or the screen's edge is seen.
+  const asked = useRef(false);
+  const reveal = () => {
+    if (!asked.current) return;
+    asked.current = false;
+    panel.current?.scrollIntoView({block: 'nearest'});
+  };
+  useEffect(() => {
+    if (open && reduce) reveal();
+  });
   return (
     <div className={className}>
       <button
         type="button"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        onClick={() => setOpen(value => !value)}
+        onClick={() => {
+          asked.current = !open;
+          setOpen(value => !value);
+        }}
         className={cn(
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
           variant === 'button'
@@ -45,11 +60,13 @@ export function Disclosure({
         {open ? (
           <motion.div
             id={id}
+            ref={panel}
             key="panel"
             initial={reduce ? {opacity: 1} : {height: 0, opacity: 0}}
             animate={reduce ? {opacity: 1} : {height: 'auto', opacity: 1}}
             exit={reduce ? {opacity: 0} : {height: 0, opacity: 0}}
             transition={reduce ? {duration: 0} : SPRING}
+            onAnimationComplete={reveal}
             className="overflow-hidden"
           >
             <div className="pt-3">{children}</div>

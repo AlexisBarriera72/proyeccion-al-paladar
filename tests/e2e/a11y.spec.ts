@@ -107,14 +107,34 @@ test('the keyboard reaches a session and its action', async ({page}) => {
 });
 
 test('text spacing and 200% zoom keep the page usable', async ({page}) => {
-  await page.goto('/');
-  await page.addStyleTag({
-    content:
-      '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }',
-  });
-  await noHorizontalScroll(page);
+  await page.setExtraHTTPHeaders(OWNER);
   const size = page.viewportSize()!;
-  await page.setViewportSize({width: Math.round(size.width / 2), height: Math.round(size.height / 2)});
-  await noHorizontalScroll(page);
-  await expect(page.getByRole('heading', {level: 1})).toBeVisible();
+  for (const path of [
+    '/',
+    '/funciones/demo-prueba-a/',
+    '/politicas/',
+    '/equipo/',
+    '/equipo/esta-noche/',
+    '/equipo/sesiones/',
+    '/equipo/sesiones/demo-prueba-a/',
+    '/equipo/reservaciones/',
+    '/equipo/excepciones/',
+    '/equipo/pedidos/',
+    '/equipo/experiencias/',
+    '/equipo/configuracion/',
+    '/equipo/configuracion/?tab=demostracion',
+    '/equipo/historial/',
+  ]) {
+    await page.setViewportSize(size);
+    await page.goto(path);
+    await page.waitForLoadState('networkidle');
+    await page.addStyleTag({
+      content:
+        '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }',
+    });
+    await noHorizontalScroll(page);
+    await page.setViewportSize({width: Math.round(size.width / 2), height: Math.round(size.height / 2)});
+    await noHorizontalScroll(page);
+    await expect(page.getByRole('heading', {level: 1}), path).toBeVisible();
+  }
 });

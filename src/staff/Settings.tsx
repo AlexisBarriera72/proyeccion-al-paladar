@@ -369,7 +369,8 @@ function SettingRow({
           disabled={disabled}
           aria-describedby={help ? `${id}-help` : undefined}
           onChange={event => onChange(event.target.value)}
-          className={cn(fieldClass, 'w-auto min-w-0 flex-1 basis-48 disabled:bg-stone-100')}
+          // Wide enough for its longest option; on a narrow phone "Guardar" moves under it.
+          className={cn(fieldClass, 'w-auto min-w-0 flex-1 basis-56 disabled:bg-stone-100')}
         >
           {options.map(option => (
             <option key={option.value} value={option.value}>
@@ -1245,7 +1246,7 @@ export function Settings() {
       <QueryView query={query} onRetry={() => void reload()}>
         {data => (
           // Tabs switch at once: panels mounted by a tab change don't replay the page entry.
-          <motion.div initial={false}>
+          <motion.div initial={false} animate="show">
             <Tabs.Root
               value={tab}
               onValueChange={choose}

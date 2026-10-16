@@ -21,6 +21,8 @@ interface Props {
   size?: 'default' | 'wide';
   /** Actions that stay in view below the scrolling body. */
   footer?: ReactNode;
+  /** Without a description: the id of the body element that says what will happen, if any. */
+  describedBy?: string;
   className?: string;
 }
 
@@ -34,6 +36,7 @@ export function Dialog({
   kind = 'dialog',
   size = 'default',
   footer,
+  describedBy,
   className,
 }: Props) {
   const reduce = useReducedMotion();
@@ -64,6 +67,9 @@ export function Dialog({
             <D.Content
               asChild
               forceMount
+              // With no description, the dialog is described by its body, or by nothing; never by
+              // its own title again.
+              {...(description ? {} : {'aria-describedby': describedBy})}
               onCloseAutoFocus={event => {
                 event.preventDefault();
                 if (returnTo.current?.isConnected) returnTo.current.focus();
@@ -75,7 +81,7 @@ export function Dialog({
                 exit={leave}
                 transition={reduce ? {duration: 0} : SPRING}
                 className={cn(
-                  'fixed z-50 flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-2xl border border-border/50 bg-surface',
+                  'fixed z-50 flex max-h-[92dvh] w-auto flex-col overflow-hidden sm:w-full rounded-2xl border border-border/50 bg-surface',
                   'shadow-[0_1px_2px_rgba(28,25,23,0.04),0_8px_24px_rgba(28,25,23,0.06)] focus:outline-none',
                   sheet
                     ? cn(
@@ -93,9 +99,7 @@ export function Dialog({
                     </D.Title>
                     {description ? (
                       <D.Description className="text-sm leading-5 text-muted">{description}</D.Description>
-                    ) : (
-                      <D.Description className="sr-only">{title}</D.Description>
-                    )}
+                    ) : null}
                   </div>
                   <D.Close
                     className="inline-flex size-11 shrink-0 items-center justify-center rounded-2xl text-ink hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"

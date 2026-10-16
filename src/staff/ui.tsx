@@ -323,12 +323,15 @@ export function ConfirmDialog({
   primary?: boolean;
 }) {
   const {t} = useStaffT();
+  // The body says what will happen, so the dialog is described by it.
+  const bodyId = useId();
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
       title={title}
       closeLabel={t('staff.close')}
+      describedBy={bodyId}
       footer={
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
@@ -346,7 +349,9 @@ export function ConfirmDialog({
         </div>
       }
     >
-      <div className="text-base leading-6 text-ink">{body}</div>
+      <div id={bodyId} className="text-base leading-6 text-ink">
+        {body}
+      </div>
     </Dialog>
   );
 }
@@ -504,7 +509,7 @@ export function StatusPill({icon: Icon, tone, children}: {icon: LucideIcon; tone
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-sm leading-5',
+        'inline-flex items-center gap-1.5 max-w-full rounded-full border px-2.5 py-0.5 text-sm leading-5',
         tone === 'action' && 'border-ink bg-ink font-medium text-white',
         tone === 'normal' && 'border-stone-500 text-ink',
         tone === 'ended' && 'border-stone-400 text-muted',
@@ -557,7 +562,7 @@ export function SessionState({state}: {state: StaffSession['state']}) {
 export function Demo({synthetic}: {synthetic: unknown}) {
   const {t} = useStaffT();
   return synthetic ? (
-    <span className="inline-flex items-center whitespace-nowrap rounded-full border border-dashed border-stone-500 px-2.5 py-0.5 text-sm font-medium leading-5 text-ink">
+    <span className="inline-flex items-center max-w-full rounded-full border border-dashed border-stone-500 px-2.5 py-0.5 text-sm font-medium leading-5 text-ink">
       {t('staff.synthetic')}
     </span>
   ) : null;
@@ -581,7 +586,7 @@ export function Chip({children}: {children: ReactNode}) {
   return (
     <span
       className={cn(
-        'inline-flex items-center whitespace-nowrap rounded-full border border-stone-400 px-2.5 py-0.5 text-sm leading-5 text-ink',
+        'inline-flex items-center max-w-full rounded-full border border-stone-400 px-2.5 py-0.5 text-sm leading-5 text-ink',
         numbers,
       )}
     >

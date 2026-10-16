@@ -887,8 +887,9 @@ export function BookingPage({id}: {id: string}) {
               {...dialogProps('resize')}
               label={t('bk.resize')}
               busy={busy}
-              canSend={Boolean(intOrNull(size || String(b.party_size)))}
-              onSend={() => act({action: 'resize', partySize: intOrNull(size || String(b.party_size))}, t('bk.done'))}
+              // Only a new size can be sent: an unchanged one would record a change that didn't happen.
+              canSend={Boolean(intOrNull(size)) && intOrNull(size) !== b.party_size}
+              onSend={() => act({action: 'resize', partySize: intOrNull(size)}, t('bk.done'))}
             >
               <TextField
                 id={`${ids}-size`}
@@ -1177,7 +1178,7 @@ function Payments({
       }
     >
       <div className="flex flex-col gap-1 px-4 sm:px-6">
-        <p className={cn('text-lg font-semibold leading-7 text-ink', numbers)}>
+        <p className={cn('text-base font-semibold leading-6 text-ink', numbers)}>
           {t('bk.net', {amount: formatMoney(b.net, 'USD', lang)})}
         </p>
         {refundCalc !== null ? (
@@ -1235,7 +1236,7 @@ function Payments({
               <p className="font-medium">{t('bk.seatsWarning')}</p>
             </Callout>
           ) : null}
-          <div className="grid grid-cols-1 gap-4 min-[22rem]:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <SelectField
               id={`${ids}-kind`}
               label={t('bk.kind')}
@@ -1268,7 +1269,7 @@ function Payments({
             )}
           </div>
           {kind === 'reversal' ? null : (
-            <div className="grid grid-cols-1 gap-4 min-[22rem]:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <TextField
                 id={`${ids}-amount`}
                 label={t('bk.amount')}

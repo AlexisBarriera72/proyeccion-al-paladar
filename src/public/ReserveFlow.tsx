@@ -2,7 +2,7 @@
 // The draft (with its mutation ID and management token) is kept in this tab's storage, so a
 // lost response can be retried safely and the link rebuilt. The screen says only what the
 // server answered.
-import {useEffect, useId, useRef, useState, type FormEvent, type ReactNode} from 'react';
+import {useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type Ref} from 'react';
 import {AnimatePresence, motion, useReducedMotion} from 'motion/react';
 import {CalendarDays, CircleCheck, Copy, Hourglass, MessageCircle, Minus, Plus} from 'lucide-react';
 import type {BookingStatus, ManageView, PublicSession} from '../../shared/types.ts';
@@ -96,8 +96,18 @@ export function ReserveFlow({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState<Problem>(null);
   const [sending, setSending] = useState(false);
-  const headingRef = useRef<HTMLHeadingElement>(null);
+  // Focus moves to each step's heading once that step is on screen, after the previous step has
+  // left (the steps change with an exit animation), so the change is announced. The heading's
+  // ref runs when the new step mounts; the effect below asks for it on every step change.
+  const wantFocus = useRef(true);
+  const headingRef = useCallback((heading: HTMLHeadingElement | null) => {
+    if (!heading || !wantFocus.current) return;
+    wantFocus.current = false;
+    requestAnimationFrame(() => heading.focus());
+  }, []);
+  const problemRef = useRef<HTMLDivElement>(null);
   const reduce = useReducedMotion();
+  const acceptId = `${ids}-accept`;
   const step: Step = receipt ? 5 : draft.step;
 
   const setDraft = (patch: Partial<Draft>) =>
@@ -112,9 +122,13 @@ export function ReserveFlow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockedKind]);
 
-  // Move focus to the step's heading so the change is announced.
+  // A problem appears at the end of the review, above the footer: bring it into view.
   useEffect(() => {
-    if (open) requestAnimationFrame(() => headingRef.current?.focus());
+    if (problem) requestAnimationFrame(() => problemRef.current?.scrollIntoView({block: 'nearest'}));
+  }, [problem]);
+
+  useEffect(() => {
+    wantFocus.current = true;
   }, [step, open]);
 
   const max = Math.min(session.partyMax ?? 60, reserve && session.remaining !== null ? session.remaining : 60);
@@ -149,6 +163,12 @@ export function ReserveFlow({
     event.preventDefault();
     if (reserve && !draft.accepted) {
       setErrors({accepted: t('flow.acceptRequired')});
+      // The submit sits in the footer, so bring the checkbox and its error into view.
+      requestAnimationFrame(() => {
+        const box = document.getElementById(acceptId);
+        box?.focus();
+        box?.scrollIntoView({block: 'center'});
+      });
       return;
     }
     if (!navigator.onLine) {
@@ -494,7 +514,6 @@ export function ReserveFlow({
       </Button>,
     );
   } else if (step === 4) {
-    const acceptId = `${ids}-accept`;
     const rows: {label: string; value: ReactNode; edit?: Step}[] = [
       {label: t('flow.step1'), value: pick(session.title, lang)},
       {label: t('detail.when'), value: <WhenText session={session} />},
@@ -509,18 +528,28 @@ export function ReserveFlow({
           </span>
         ),
       },
-      {label: t('flow.step3'), value: `${draft.leadName} · ${draft.contactValue}`, edit: 3},
+      {
+        label: t('flow.step3'),
+        value: (
+          <>
+            <span className="block">{draft.leadName}</span>
+            <span className={cn('block', draft.contactKind === 'phone' ? 'whitespace-nowrap' : 'break-all')}>
+              {draft.contactValue}
+            </span>
+          </>
+        ),
+        edit: 3,
+      },
       ...(draft.note.trim() ? [{label: t('flow.noteLabel'), value: draft.note.trim(), edit: 3 as Step}] : []),
     ];
     body = (
       <form id={reviewForm} className="space-y-4" noValidate onSubmit={submit}>
         {heading(reserve ? t('flow.reviewReserve') : t('flow.reviewRequest'))}
-        <dl className="divide-y divide-border/70 rounded-2xl border border-stone-300">
+        <dl className="divide-y divide-border/70 border-y border-border/70">
           {rows.map(row => (
-            <div key={row.label} className="grid gap-1 px-3 py-2.5 sm:grid-cols-[9rem_minmax(0,1fr)]">
-              <dt className={cn(helper, 'sm:pt-0.5')}>{row.label}</dt>
-              <dd className="flex items-start justify-between gap-2 text-base leading-6 text-ink">
-                <span className="min-w-0 [overflow-wrap:anywhere]">{row.value}</span>
+            <div key={row.label} className="flex flex-col gap-0.5 py-2.5">
+              <dt className="flex min-h-6 items-center justify-between gap-2">
+                <span className={helper}>{row.label}</span>
                 {row.edit ? (
                   <button
                     type="button"
@@ -531,7 +560,8 @@ export function ReserveFlow({
                     {t('flow.edit')}
                   </button>
                 ) : null}
-              </dd>
+              </dt>
+              <dd className="text-base leading-6 text-ink [overflow-wrap:break-word]">{row.value}</dd>
             </div>
           ))}
         </dl>
@@ -565,6 +595,7 @@ export function ReserveFlow({
         </p>
         {problem ? (
           <div
+            ref={problemRef}
             role="alert"
             className="space-y-2 rounded-2xl border-2 border-ink p-3 text-sm font-medium leading-5 text-ink"
           >
@@ -598,18 +629,25 @@ export function ReserveFlow({
       </Button>,
     );
   } else {
-    body = <ReceiptView session={session} receipt={receipt!} manageUrl={manageUrl} headingRef={headingRef} />;
-    footer = receipt?.replaced ? null : (
-      // Phones: the guest's page on top, full width. Wider: side by side, the main action last.
-      <div className="flex flex-col gap-2 sm:flex-row-reverse sm:gap-3">
-        {manageUrl ? (
-          <a href={manageUrl} className={cn(buttonVariants({variant: 'primary'}), 'sm:flex-1')}>
-            {t('result.openLink')}
-          </a>
-        ) : null}
-        <Button onClick={startOver}>{reserve ? t('flow.startOverReserve') : t('flow.startOverRequest')}</Button>
-      </div>
+    body = (
+      <ReceiptView
+        session={session}
+        receipt={receipt!}
+        manageUrl={manageUrl}
+        headingRef={headingRef}
+        startOver={
+          // Quiet and last: starting over clears this receipt, the only copy of the private link here.
+          <Button variant="ghost" onClick={startOver} className="-ml-3">
+            {reserve ? t('flow.startOverReserve') : t('flow.startOverRequest')}
+          </Button>
+        }
+      />
     );
+    footer = manageUrl ? (
+      <a href={manageUrl} className={buttonVariants({variant: 'primary', width: 'full'})}>
+        {t('result.openLink')}
+      </a>
+    ) : null;
   }
 
   return (
@@ -618,28 +656,35 @@ export function ReserveFlow({
       open={open}
       onOpenChange={onOpenChange}
       title={reserve ? t('flow.title') : t('flow.titleRequest')}
-      description={`${t('flow.stepOf', {n: step})}: ${stepNames[step - 1]}`}
+      description={
+        <>
+          <span className="block">{`${t('flow.stepOf', {n: step})}: ${stepNames[step - 1]}`}</span>
+          {/* The header doesn't scroll, so every step, the receipt included, names its session. */}
+          <span className={cn('mt-1 flex items-start gap-2', numbers)}>
+            <CalendarDays className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>
+              <span className="font-medium text-ink">{pick(session.title, lang)}</span>
+              {' · '}
+              {session.startsAt === null ? (
+                t('status.date_tbd')
+              ) : (
+                <>
+                  {formatShortDate(session.startsAt, lang)},{' '}
+                  <span className="whitespace-nowrap">{formatTime(session.startsAt, lang)}</span>
+                </>
+              )}
+            </span>
+          </span>
+        </>
+      }
       closeLabel={t('app.close')}
       footer={footer}
     >
-      <ol className="mb-4 grid grid-cols-5 gap-1" aria-hidden="true">
+      <ol className="mb-5 grid grid-cols-5 gap-1" aria-hidden="true">
         {stepNames.map((name, index) => (
           <li key={name} className={cn('h-1.5 rounded-full', index < step ? 'bg-accent' : 'bg-stone-200')} />
         ))}
       </ol>
-      {step > 1 && step < 5 ? (
-        // Every step names the session it is for.
-        <p className={cn(helper, 'mb-5 flex items-start gap-2')}>
-          <CalendarDays className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <span className={numbers}>
-            <span className="font-medium text-ink">{pick(session.title, lang)}</span>
-            {' · '}
-            {session.startsAt === null
-              ? t('status.date_tbd')
-              : `${formatShortDate(session.startsAt, lang)}, ${formatTime(session.startsAt, lang)}`}
-          </span>
-        </p>
-      ) : null}
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={step}
@@ -660,11 +705,13 @@ function ReceiptView({
   receipt,
   manageUrl,
   headingRef,
+  startOver,
 }: {
   session: PublicSession;
   receipt: Receipt;
   manageUrl: string | null;
-  headingRef: React.RefObject<HTMLHeadingElement | null>;
+  headingRef: Ref<HTMLHeadingElement>;
+  startOver: ReactNode;
 }) {
   const {t, lang} = useT();
   const [copied, setCopied] = useState<string | null>(null);
@@ -783,6 +830,7 @@ function ReceiptView({
           </div>
         </Disclosure>
       </div>
+      {startOver}
     </div>
   );
 }

@@ -7,7 +7,9 @@ import {cn} from '../../lib/cn.ts';
 import {useTap} from '../../lib/motion.ts';
 
 const variants = cva(
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium leading-5 ' +
+  'inline-flex min-h-11 max-w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium leading-5 ' +
+    // Never wider than its container: at 200% zoom a long label breaks instead of running off.
+    '[overflow-wrap:anywhere] ' +
     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ' +
     'disabled:cursor-not-allowed disabled:opacity-60 [&_svg]:size-4 [&_svg]:shrink-0',
   {

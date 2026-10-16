@@ -380,6 +380,7 @@ export function ManagePage({token}: {token: string}) {
               reference={b.reference}
               partySize={b.partySize}
               manageUrl={`${location.origin}/reservacion/${token}/`}
+              full
             />
             {canAsk ? (
               <div className="space-y-2 border-t border-border/70 pt-4">

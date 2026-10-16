@@ -78,6 +78,12 @@ export const actionLabel = (t: T, code: string) => (ACTION_KEYS[code] ? t(ACTION
 export type HistoryType = 'bookings' | 'sessions' | 'payments' | 'settings';
 
 /** Which "Tipo" filter an event belongs to, from its own action and target. */
+/** Who did it, as staff read it: "Cliente" for the guest's own page, the email for staff. */
+function actorName(actor: string, t: (key: string) => string): string {
+  if (actor === 'guest') return t('hist.actorGuest');
+  return actor.startsWith('staff:') ? actor.slice('staff:'.length) : actor;
+}
+
 export function historyType(event: AuditEvent): HistoryType {
   if (event.action === 'record_payment') return 'payments';
   if (event.target_type === 'booking' || event.target_type === 'request') return 'bookings';
@@ -182,7 +188,8 @@ function ChangeTable({event}: {event: AuditEvent}) {
 function RecordLink({event}: {event: AuditEvent}) {
   const {t} = useStaffT();
   const snapshot = parse(event.after_json) ?? parse(event.before_json) ?? {};
-  const link = buttonVariants({variant: 'link'});
+  // 44px tall, like every other target.
+  const link = cn(buttonVariants({variant: 'link'}), 'inline-flex min-h-11 items-center');
   if (event.target_type === 'booking') {
     const ref = typeof snapshot.reference === 'string' ? snapshot.reference : event.target_id;
     return (
@@ -230,7 +237,10 @@ export function AuditRow({
         {showRecord ? <RecordLink event={event} /> : null}
       </p>
       <p className={cn(helper, numbers, 'break-all')}>
-        {t('hist.by', {who: event.actor, date: withDate ? `${formatShortDate(event.at, lang)} ${time}` : time})}
+        {t('hist.by', {
+          who: actorName(event.actor, t),
+          date: withDate ? `${formatShortDate(event.at, lang)} ${time}` : time,
+        })}
       </p>
       {list === null || list.length ? (
         <Disclosure variant="link" summary={t('hist.changes')}>

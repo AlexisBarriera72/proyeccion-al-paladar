@@ -1,6 +1,6 @@
-// A tear-off date: weekday, day number and month in a 56px column beside the text, so cards
-// don't grow taller. Below 22rem it lies flat on one line. The full date is in the text
-// next to it, so the stub is hidden from screen readers.
+// A date column: weekday, day number and month in 56px beside the text, so cards don't grow
+// taller. No border or fill, so it never looks like something to tap. Below 22rem it lies flat
+// on one line. The full date is in the text next to it, so the stub is hidden from screen readers.
 import {stubParts} from '../../shared/time.ts';
 import {useT} from '../lib/i18n.tsx';
 import {cn} from '../lib/cn.ts';
@@ -14,7 +14,7 @@ export function DateStub({ms, className}: {ms: number; className?: string}) {
       aria-hidden="true"
       className={cn(
         'flex shrink-0 items-baseline gap-1.5 self-start text-ink',
-        'min-[22rem]:w-14 min-[22rem]:flex-col min-[22rem]:items-center min-[22rem]:gap-0 min-[22rem]:rounded-2xl min-[22rem]:border min-[22rem]:border-stone-300 min-[22rem]:bg-surface min-[22rem]:py-1.5',
+        'min-[22rem]:w-14 min-[22rem]:flex-col min-[22rem]:items-center min-[22rem]:gap-0 min-[22rem]:py-1',
         className,
       )}
     >

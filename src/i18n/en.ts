@@ -10,7 +10,6 @@ export const en: Record<Key, string> = {
   'app.policies': 'Terms',
   'app.calendar': 'Calendar',
   'app.lang': 'Español',
-  'app.langLabel': 'View the site in Spanish',
   'app.loading': 'Loading…',
   'app.retry': 'Try again',
   'app.close': 'Close',

@@ -2,7 +2,7 @@
 // recording a test payment before confirming, the "Más acciones" menu, the section links on
 // computers and phones, and Configuración's tabs.
 import {expect, test} from '@playwright/test';
-import {OWNER, STAFF} from './fixtures.ts';
+import {OWNER, STAFF, invisibleInMain} from './fixtures.ts';
 
 const SECTIONS = [
   'Calendario',
@@ -109,4 +109,31 @@ test('Configuración opens the tab its link names', async ({page}) => {
   await expect(panel.getByRole('button', {name: 'Editar Sala de prueba (DEMO)'})).toBeVisible();
   // Only the chosen tab is mounted, so the rules are not on the page.
   await expect(page.getByLabel('Confirmaciones en línea')).toHaveCount(0);
+});
+
+test('every staff page finishes showing its panels (none stays invisible)', async ({page}) => {
+  await page.setExtraHTTPHeaders(OWNER);
+  for (const path of [
+    '/equipo/',
+    '/equipo/esta-noche/',
+    '/equipo/sesiones/',
+    '/equipo/sesiones/demo-prueba-a/',
+    '/equipo/reservaciones/',
+    '/equipo/excepciones/',
+    '/equipo/pedidos/',
+    '/equipo/experiencias/',
+    '/equipo/configuracion/',
+    '/equipo/configuracion/?tab=lugares',
+    '/equipo/configuracion/?tab=condiciones',
+    '/equipo/configuracion/?tab=equipo',
+    '/equipo/configuracion/?tab=demostracion',
+    '/equipo/historial/',
+  ]) {
+    await page.goto(path);
+    expect(await invisibleInMain(page), path).toEqual([]);
+  }
+  // Switching a tab in place shows its panels too.
+  await page.goto('/equipo/configuracion/');
+  await page.getByRole('tab', {name: 'Condiciones'}).click();
+  expect(await invisibleInMain(page), 'after a tab change').toEqual([]);
 });

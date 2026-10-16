@@ -14,12 +14,15 @@ export function CalendarExport({
   reference,
   partySize,
   manageUrl,
+  full = false,
 }: {
   session: PublicSession;
   status: BookingStatus;
   reference: string;
   partySize: number;
   manageUrl: string | null;
+  /** Full-width buttons, stacked, for a column of actions. */
+  full?: boolean;
 }) {
   const {t, lang} = useT();
   const icsStatus = icsStatusFor(status);
@@ -51,12 +54,12 @@ export function CalendarExport({
   }, [event, reference, icsStatus]);
   if (!event || status === 'cancelled') return null;
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className={full ? 'flex flex-col gap-2' : 'flex flex-wrap gap-2'}>
       {href ? (
         <a
           href={href}
           download={`proyeccion-al-paladar-${reference}.ics`}
-          className={buttonVariants({variant: 'secondary'})}
+          className={buttonVariants({variant: 'secondary', width: full ? 'full' : 'auto'})}
         >
           <CalendarPlus aria-hidden="true" />
           {t('result.ics')}
@@ -66,7 +69,7 @@ export function CalendarExport({
         href={googleCalendarUrl(event)}
         target="_blank"
         rel="noopener noreferrer"
-        className={buttonVariants({variant: 'ghost'})}
+        className={buttonVariants({variant: 'ghost', width: full ? 'full' : 'auto'})}
       >
         {t('result.google')}
       </a>

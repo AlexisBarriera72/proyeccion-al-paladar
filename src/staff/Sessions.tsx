@@ -160,7 +160,8 @@ function StaffMonthGrid({
                               taken: session.seats_taken,
                               capacity: session.capacity - session.blocked_seats,
                             });
-                      const label = `${formatShortDate(session.starts_at!, lang)}, ${formatTime(session.starts_at!, lang)}. ${session.title_es ?? ''}. ${t(`ses.state.${session.state}`)}. ${seats}.${session.synthetic ? ` ${t('staff.synthetic')}.` : ''}`;
+                      // "p. m." already ends with a period, so the time is followed by a colon.
+                      const label = `${formatShortDate(session.starts_at!, lang)}, ${formatTime(session.starts_at!, lang)}: ${session.title_es ?? ''}. ${t(`ses.state.${session.state}`)}. ${seats}.${session.synthetic ? ` ${t('staff.synthetic')}.` : ''}`;
                       return (
                         <li key={session.id}>
                           <button
@@ -169,7 +170,7 @@ function StaffMonthGrid({
                             aria-label={label}
                             aria-pressed={selected}
                             className={cn(
-                              'relative block w-full rounded-lg border px-1.5 py-1 text-left text-sm leading-5 hover:bg-stone-100',
+                              'relative block w-full rounded-lg border px-1.5 py-1 text-left text-[13px] leading-4 hover:bg-stone-100',
                               'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
                               selected ? 'border-transparent' : 'border-stone-300',
                               tone === 'ended' ? 'text-muted' : 'text-ink',
@@ -183,11 +184,20 @@ function StaffMonthGrid({
                                 className="absolute inset-0 rounded-lg border-2 border-ink"
                               />
                             ) : null}
-                            <span className={cn('flex min-w-0 items-center gap-1 font-semibold', numbers)}>
-                              <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                              <span className="truncate">{formatTime(session.starts_at!, lang)}</span>
+                            {/* As on the guest grid: the full time, two lines of title, and a state
+                                word only when the session isn't simply published. */}
+                            <span className={cn('block font-semibold', numbers)}>
+                              {formatTime(session.starts_at!, lang)}
                             </span>
-                            <span className="block truncate">{session.title_es}</span>
+                            <span className={list.length === 1 ? 'line-clamp-3' : 'line-clamp-2'}>
+                              {session.title_es}
+                            </span>
+                            {session.state === 'published' ? null : (
+                              <span className="mt-0.5 flex items-center gap-1">
+                                <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+                                {t(`ses.state.${session.state}`)}
+                              </span>
+                            )}
                           </button>
                         </li>
                       );
@@ -387,12 +397,10 @@ function Preview({
         <Link to={`/equipo/sesiones/${session.id}/`} className={buttonVariants({variant: 'primary'})}>
           {t('ses.openSession')}
         </Link>
-        {session.state === 'published' ? (
-          <Button variant="secondary" onClick={() => onEntry(session.id)}>
-            <Plus aria-hidden="true" />
-            {t('bk.new')}
-          </Button>
-        ) : null}
+        <Button variant="secondary" onClick={() => onEntry(session.id)}>
+          <Plus aria-hidden="true" />
+          {t('bk.new')}
+        </Button>
       </div>
     </Panel>
   );
@@ -449,7 +457,7 @@ export function CalendarView() {
         <h2
           aria-live="polite"
           className={cn(
-            'min-w-0 flex-1 text-center text-lg font-semibold leading-7 text-ink first-letter:uppercase sm:min-w-44 sm:flex-none',
+            'min-w-0 flex-1 text-center text-base font-semibold leading-6 text-ink first-letter:uppercase sm:min-w-40 sm:flex-none',
             numbers,
           )}
         >
@@ -1076,7 +1084,7 @@ function Checklist({items}: {items: {code: string; ok: boolean}[]}) {
             <li key={item.code} className="flex items-start gap-2 text-sm font-semibold leading-5 text-ink">
               <CircleX className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <span>
-                <span className="sr-only">{t('ses.checkMissing')}: </span>
+                <span>{t('ses.checkMissing')}: </span>
                 {t(`check.${item.code}`)}
               </span>
             </li>
@@ -1090,7 +1098,7 @@ function Checklist({items}: {items: {code: string; ok: boolean}[]}) {
               <li key={item.code} className="flex items-start gap-2 text-sm leading-5 text-ink">
                 <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>
-                  <span className="sr-only">{t('ses.checkOk')}: </span>
+                  <span className="text-muted">{t('ses.checkOk')}: </span>
                   {t(`check.${item.code}`)}
                 </span>
               </li>
@@ -1174,7 +1182,7 @@ export function SessionPage({id}: {id: string}) {
         const people = confirmed.reduce((sum, b) => sum + b.party_size, 0);
         const group =
           session.party_min === null && session.party_max === null
-            ? t('ses.notSet')
+            ? t('ses.groupTbd')
             : t('ses.groupRange', {min: session.party_min ?? '—', max: session.party_max ?? '—'});
 
         return (
@@ -1218,12 +1226,11 @@ export function SessionPage({id}: {id: string}) {
                       onConfirm={() => transition(session, 'publish')}
                     />
                   ) : null}
-                  {open ? (
-                    <Button variant="secondary" onClick={() => setEditing(true)}>
-                      <Pencil aria-hidden="true" />
-                      {t('ses.editSession')}
-                    </Button>
-                  ) : null}
+                  {/* Always offered, as before: the server decides and its refusal says why. */}
+                  <Button variant="secondary" onClick={() => setEditing(true)}>
+                    <Pencil aria-hidden="true" />
+                    {t('ses.editSession')}
+                  </Button>
                   <Menu label={t('staff.more')} actions={more} />
                 </>
               }
@@ -1257,12 +1264,10 @@ export function SessionPage({id}: {id: string}) {
                 flush
                 title={t('ses.bookingsCount', {count: bookings.length})}
                 actions={
-                  session.state === 'published' ? (
-                    <Button variant="secondary" onClick={() => setEntry(true)}>
-                      <Plus aria-hidden="true" />
-                      {t('bk.new')}
-                    </Button>
-                  ) : null
+                  <Button variant="secondary" onClick={() => setEntry(true)}>
+                    <Plus aria-hidden="true" />
+                    {t('bk.new')}
+                  </Button>
                 }
                 className="lg:col-start-1 lg:row-span-2 lg:row-start-1"
               >

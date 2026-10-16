@@ -12,8 +12,15 @@ export async function inFirstViewport(page: Page, selector: ReturnType<Page['loc
   );
 }
 
+/**
+ * The page is no wider than its layout viewport. Compared with clientWidth, not innerWidth: mobile
+ * emulation zooms out to fit wide content, which grows innerWidth and would hide the overflow.
+ */
 export async function noHorizontalScroll(page: Page) {
-  const [scroll, width] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
+  const [scroll, width] = await page.evaluate(() => [
+    document.documentElement.scrollWidth,
+    document.documentElement.clientWidth,
+  ]);
   expect(scroll, 'no horizontal page scroll').toBeLessThanOrEqual(width);
 }
 
@@ -36,4 +43,19 @@ export async function settledBox(locator: Locator) {
     await locator.page().waitForTimeout(100);
   }
   throw new Error('the element kept moving');
+}
+
+/**
+ * Elements in <main> that are still fully transparent once the page has settled. An entry
+ * animation that never finishes leaves content invisible, though Playwright still counts it as
+ * visible, so the tests look at the computed opacity.
+ */
+export async function invisibleInMain(page: Page): Promise<string[]> {
+  await page.waitForLoadState('networkidle');
+  await page.waitForTimeout(1200);
+  return page.evaluate(() =>
+    [...document.querySelectorAll('main *')]
+      .filter(el => getComputedStyle(el).opacity === '0' && (el as HTMLElement).innerText?.trim())
+      .map(el => `${el.tagName.toLowerCase()}: ${(el as HTMLElement).innerText.trim().slice(0, 60)}`),
+  );
 }

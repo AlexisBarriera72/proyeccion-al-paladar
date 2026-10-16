@@ -78,7 +78,8 @@ export function MonthGrid({
                     {list.map(session => {
                       const selected = session.id === selectedId;
                       const Mark = MARK[session.availability as keyof typeof MARK];
-                      const label = `${formatShortDate(session.startsAt!, lang)}, ${formatTime(session.startsAt!, lang)}. ${pick(session.title, lang)}. ${t(`status.${session.availability}`)}.`;
+                      // "p. m." already ends with a period, so the time is followed by a colon.
+                      const label = `${formatShortDate(session.startsAt!, lang)}, ${formatTime(session.startsAt!, lang)}: ${pick(session.title, lang)}. ${t(`status.${session.availability}`)}.`;
                       return (
                         <li key={session.id}>
                           <button
@@ -106,7 +107,10 @@ export function MonthGrid({
                               {Mark ? <Mark className="size-3.5 shrink-0" aria-hidden="true" /> : null}
                             </span>
                             <span
-                              className={cn('line-clamp-2', session.availability === 'cancelled' && 'line-through')}
+                              className={cn(
+                                list.length === 1 ? 'line-clamp-3' : 'line-clamp-2',
+                                session.availability === 'cancelled' && 'line-through',
+                              )}
                             >
                               {pick(session.title, lang)}
                             </span>
