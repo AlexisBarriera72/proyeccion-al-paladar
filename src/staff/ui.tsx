@@ -228,7 +228,7 @@ export function Callout({
   icon?: LucideIcon;
   children: ReactNode;
   className?: string;
-  role?: 'status' | 'note';
+  role?: 'status' | 'note' | 'alert';
 }) {
   return (
     <div role={role} className={cn('flex items-start gap-3 rounded-2xl border-2 border-ink bg-surface p-3', className)}>
@@ -413,10 +413,13 @@ export function InputDialog({
   children: ReactNode;
   canSend: boolean;
   busy?: boolean;
-  onSend: () => Promise<boolean>;
+  /** true closes the dialog; a notice is a refusal, shown here next to the buttons. */
+  onSend: () => Promise<boolean | Notice>;
 }) {
   const {t} = useStaffT();
   const formId = useId();
+  const [problem, setProblem] = useState<Notice>(null);
+  useOnOpen(open, () => setProblem(null));
   return (
     <Dialog
       open={open}
@@ -425,13 +428,17 @@ export function InputDialog({
       description={description}
       closeLabel={t('staff.close')}
       footer={
-        <FormFooter
-          formId={formId}
-          label={label}
-          busy={busy}
-          disabled={!canSend}
-          onCancel={() => onOpenChange(false)}
-        />
+        <div>
+          {/* A refusal sits beside the button, in the footer that doesn't scroll, so it is seen after a send. */}
+          <NoticeLine notice={problem} className="mb-3" />
+          <FormFooter
+            formId={formId}
+            label={label}
+            busy={busy}
+            disabled={!canSend}
+            onCancel={() => onOpenChange(false)}
+          />
+        </div>
       }
     >
       <form
@@ -439,7 +446,10 @@ export function InputDialog({
         className="flex flex-col gap-4"
         onSubmit={async event => {
           event.preventDefault();
-          if (await onSend()) onOpenChange(false);
+          setProblem(null);
+          const answer = await onSend();
+          if (answer === true) onOpenChange(false);
+          else if (answer) setProblem(answer);
         }}
       >
         {children}
@@ -464,7 +474,7 @@ export function InputAction({
   children: ReactNode;
   canSend: boolean;
   busy?: boolean;
-  onSend: () => Promise<boolean>;
+  onSend: () => Promise<boolean | Notice>;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -485,19 +495,6 @@ export function When({ms}: {ms: number | null}) {
   return (
     <span className={numbers}>
       {formatShortDate(ms, lang)}, {formatTime(ms, lang)}
-    </span>
-  );
-}
-
-export function Pill({children, strong}: {children: ReactNode; strong?: boolean}) {
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full border px-2.5 py-0.5 text-sm leading-5',
-        strong ? 'border-ink font-semibold text-ink' : 'border-stone-400 text-ink',
-      )}
-    >
-      {children}
     </span>
   );
 }

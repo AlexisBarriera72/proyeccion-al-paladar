@@ -1,5 +1,6 @@
 // Empty, error and replaced-link states say exactly what happened.
 import {expect, test} from '@playwright/test';
+import {OWNER} from './fixtures.ts';
 
 test('empty: the brief’s exact text and the official profile only', async ({page}) => {
   await page.route('**/api/public/sessions?*', route => route.fulfill({json: {sessions: []}}));
@@ -58,4 +59,19 @@ test('a month after the last date says so, with no next date to offer', async ({
   for (let i = 0; i < 3; i++) await page.getByRole('button', {name: 'Mes siguiente'}).click();
   await expect(page.getByText('No hay fechas en este mes.')).toBeVisible();
   await expect(page.getByRole('button', {name: 'Ver próxima fecha'})).toHaveCount(0);
+});
+
+test('Excepciones: settings that fail to load are not called unapproved', async ({page}) => {
+  let fail = true;
+  await page.setExtraHTTPHeaders(OWNER);
+  await page.route('**/api/equipo/catalog', route => (fail ? route.abort() : route.continue()));
+  await page.goto('/equipo/excepciones/');
+  const problem = page.getByRole('alert').filter({hasText: 'No se pudo cargar el proceso aprobado.'});
+  await expect(problem).toBeVisible();
+  await expect(page.getByText('El proceso para estos casos no está aprobado todavía.')).toHaveCount(0);
+  fail = false;
+  await problem.getByRole('button', {name: 'Intentar de nuevo'}).click();
+  await expect(problem).toHaveCount(0);
+  // The demo's process is approved, so it waits behind its button.
+  await expect(page.getByRole('button', {name: 'Ver proceso aprobado'})).toBeVisible();
 });

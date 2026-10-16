@@ -24,13 +24,14 @@ import type {StaffBookingRow, StaffSession} from './types.ts';
 /** Sessions a booking can go to (moves, proposals, new requests), and a label for each. */
 export function useSessionOptions(enabled = true) {
   const {query} = useQuery<{sessions: StaffSession[]}>(enabled ? '/api/equipo/sessions' : null);
-  const {lang} = useStaffT();
+  const {t, lang} = useStaffT();
   return useMemo(() => {
     const list = query.state === 'ready' ? query.data.sessions : [];
+    // The date first: a narrow select cuts the end, and sessions often share a title.
     const label = (s: StaffSession) =>
-      `${s.title_es ?? s.id} · ${s.starts_at === null ? '—' : `${formatShortDate(s.starts_at, lang)} ${formatTime(s.starts_at, lang)}`}`;
+      `${s.starts_at === null ? t('staff.dateTbd') : `${formatShortDate(s.starts_at, lang)}, ${formatTime(s.starts_at, lang)}`} · ${s.title_es ?? s.id}`;
     return {list, label, published: list.filter(s => s.state === 'published')};
-  }, [query, lang]);
+  }, [query, lang, t]);
 }
 
 export function SessionPicker({
@@ -64,7 +65,7 @@ export function SessionPicker({
 
 // ------------------------------------------------------------------ sessions
 
-const SESSION_COLUMNS = 'lg:grid-cols-[10rem_minmax(0,1fr)_10rem_9rem_minmax(0,12rem)_1rem]';
+const SESSION_COLUMNS = 'lg:grid-cols-[10rem_minmax(0,1fr)_9rem_12rem_minmax(0,12rem)_1rem]';
 
 /** The column names over a session list on computers (the rows say the same in words). */
 export function SessionColumns() {
@@ -114,24 +115,27 @@ export function SessionRow({
           columns && cn('lg:gap-x-4', SESSION_COLUMNS),
         )}
       >
-        <span className={cn('col-start-1 text-sm font-semibold leading-5', numbers, columns && 'lg:row-start-1')}>
-          {when}
-        </span>
+        {/* Under a "Fecha por confirmar" heading, the row doesn't say it again. */}
+        {session.starts_at === null && timeOnly ? null : (
+          <span className={cn('col-start-1 text-sm font-semibold leading-5', numbers, columns && 'lg:row-start-1')}>
+            {when}
+          </span>
+        )}
         <span
           className={cn(
-            'col-start-1 min-w-0 break-words text-base font-medium leading-6',
+            'col-start-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1',
             columns && 'lg:col-start-2 lg:row-start-1',
           )}
         >
-          {session.title_es}
+          <Demo synthetic={session.synthetic} />
+          <span className="min-w-0 break-words text-base font-medium leading-6">{session.title_es}</span>
         </span>
         <span className={cn('col-start-1 flex flex-wrap items-center gap-2', columns && 'lg:contents')}>
           <span className={cn('flex flex-wrap items-center gap-2', columns && 'lg:col-start-3 lg:row-start-1')}>
-            <Demo synthetic={session.synthetic} />
             <SessionState state={session.state} />
           </span>
           <span className={cn(columns && 'lg:col-start-4 lg:row-start-1')}>
-            <Seats session={session} />
+            <Seats session={session} long />
           </span>
           <span className={cn('flex flex-wrap items-center gap-2', columns && 'lg:col-start-5 lg:row-start-1')}>
             <CountChips inquiries={session.inquiries} pending={session.pending} exceptions={session.exceptions} />
@@ -169,8 +173,8 @@ export function SessionRows({
 
 // ------------------------------------------------------------------ bookings
 
-const WITH_SESSION = 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_6rem_minmax(0,13rem)_1rem]';
-const WITHOUT_SESSION = 'lg:grid-cols-[minmax(0,1fr)_6rem_6rem_minmax(0,13rem)_1rem]';
+const WITH_SESSION = 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_6rem_12rem_1rem]';
+const WITHOUT_SESSION = 'lg:grid-cols-[minmax(0,1fr)_6rem_6rem_12rem_1rem]';
 
 export function BookingColumns({showSession}: {showSession?: boolean}) {
   const {t} = useStaffT();
@@ -231,7 +235,10 @@ export function BookingRow({
         )}
       >
         <span className={cn('col-start-1 flex min-w-0 flex-col', columns && 'lg:row-start-1')}>
-          <span className="break-words text-base font-medium leading-6">{booking.lead_name}</span>
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <Demo synthetic={booking.synthetic} />
+            <span className="min-w-0 break-words text-base font-medium leading-6">{booking.lead_name}</span>
+          </span>
           <span className={cn(helper, numbers)}>{booking.reference}</span>
         </span>
         {showSession ? (
@@ -250,7 +257,6 @@ export function BookingRow({
             </span>
           ) : null}
           <span className={cn('flex flex-wrap items-center gap-2', col(4 + shift), columns && 'lg:row-start-1')}>
-            <Demo synthetic={booking.synthetic} />
             <BookingStatus status={booking.status} />
           </span>
         </span>
@@ -272,7 +278,7 @@ function When({ms}: {ms: number | null}) {
   if (ms === null) return <span>{t('staff.dateTbd')}</span>;
   return (
     <span className={numbers}>
-      {formatShortDate(ms, lang)}, {formatTime(ms, lang)}
+      {formatShortDate(ms, lang)}, <span className="whitespace-nowrap">{formatTime(ms, lang)}</span>
     </span>
   );
 }

@@ -4,7 +4,20 @@
 import {useId, useState, type FormEvent, type ReactNode} from 'react';
 import {Tabs} from 'radix-ui';
 import {motion} from 'motion/react';
-import {Archive, CircleCheck, Eye, Lock, PencilLine, Pencil, Plus, RotateCcw} from 'lucide-react';
+import {
+  Archive,
+  CircleCheck,
+  CircleX,
+  Eye,
+  Hourglass,
+  KeyRound,
+  Lock,
+  PencilLine,
+  Pencil,
+  Plus,
+  RotateCcw,
+  User,
+} from 'lucide-react';
 import {formatLongDate, parsePrLocal, toPrLocalFields} from '../../shared/time.ts';
 import {navigate, useLocation} from '../lib/router.tsx';
 import {useMediaQuery} from '../lib/media.ts';
@@ -26,7 +39,6 @@ import {
   Page,
   PageHeader,
   Panel,
-  Pill,
   QueryView,
   SelectField,
   StatusPill,
@@ -39,7 +51,7 @@ import {
   useStaffT,
   type Notice,
 } from './ui.tsx';
-import {useMe} from './me.ts';
+import {useMe, useRefreshCounts} from './me.ts';
 import type {Catalog} from './types.ts';
 
 type Row = Record<string, unknown>;
@@ -320,7 +332,11 @@ export function Experiences() {
       <ExperienceSheet
         open={editing !== null}
         onOpenChange={open => {
-          if (!open) setEditing(null);
+          // Closing reloads the list, so a sheet reopened after a refusal has the current version.
+          if (!open) {
+            setEditing(null);
+            void reload(true);
+          }
         }}
         row={editing === 'new' ? null : editing}
         onSaved={next => {
@@ -362,15 +378,15 @@ function SettingRow({
       <label htmlFor={id} className="text-sm font-medium leading-5 text-ink">
         {label}
       </label>
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Phones read select, help, then "Guardar"; from sm the button sits beside the select. */}
+      <div className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
         <select
           id={id}
           value={value}
           disabled={disabled}
           aria-describedby={help ? `${id}-help` : undefined}
           onChange={event => onChange(event.target.value)}
-          // Wide enough for its longest option; on a narrow phone "Guardar" moves under it.
-          className={cn(fieldClass, 'w-auto min-w-0 flex-1 basis-56 disabled:bg-stone-100')}
+          className={cn(fieldClass, 'min-w-0 disabled:bg-stone-100 sm:col-start-1 sm:row-start-1')}
         >
           {options.map(option => (
             <option key={option.value} value={option.value}>
@@ -378,15 +394,20 @@ function SettingRow({
             </option>
           ))}
         </select>
-        <Button variant="secondary" disabled={saveDisabled} onClick={onSave}>
+        {help ? (
+          <p id={`${id}-help`} className={cn(helper, 'sm:col-start-1 sm:row-start-2')}>
+            {help}
+          </p>
+        ) : null}
+        <Button
+          variant="secondary"
+          className="justify-self-start sm:col-start-2 sm:row-start-1"
+          disabled={saveDisabled}
+          onClick={onSave}
+        >
           <Named label={t('staff.save')} name={label} />
         </Button>
       </div>
-      {help ? (
-        <p id={`${id}-help`} className={helper}>
-          {help}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -641,9 +662,16 @@ function Places({
             <li key={str(row.id)} className={cn(rowItem, 'flex items-center justify-between gap-3')}>
               <div className="flex min-w-0 flex-col gap-1">
                 <span className="break-words text-base font-medium leading-6 text-ink">{str(row.name)}</span>
+                {/* Every role can read where it is and how to arrive; only owners edit it. */}
+                {row.address ? <span className={cn(helper, 'break-words')}>{str(row.address)}</span> : null}
+                {row.instructions ? (
+                  <span className={cn(helper, 'whitespace-pre-line break-words')}>{str(row.instructions)}</span>
+                ) : null}
                 <div className="flex flex-wrap items-center gap-2">
                   <Demo synthetic={row.synthetic} />
-                  <Pill strong={Boolean(row.approved)}>{row.approved ? t('venue.ok') : t('venue.pending')}</Pill>
+                  <StatusPill icon={row.approved ? CircleCheck : Hourglass} tone="normal">
+                    {row.approved ? t('venue.ok') : t('venue.pending')}
+                  </StatusPill>
                 </div>
               </div>
               <Button variant="ghost" className="shrink-0" disabled={!owner} onClick={() => setEditing(row)}>
@@ -659,7 +687,11 @@ function Places({
       <VenueSheet
         open={editing !== null}
         onOpenChange={open => {
-          if (!open) setEditing(null);
+          // Closing reloads the catalog, so a sheet reopened after a refusal has the current version.
+          if (!open) {
+            setEditing(null);
+            refresh();
+          }
         }}
         row={editing === 'new' ? null : editing}
         setNotice={setNotice}
@@ -1020,7 +1052,12 @@ function Terms({catalog, setNotice, refresh}: {catalog: Catalog; setNotice: (n: 
                   <span className="break-words text-base font-medium leading-6 text-ink">{str(row.title)}</span>
                   <div className="flex flex-wrap items-center gap-2">
                     <Demo synthetic={row.synthetic} />
-                    <Pill strong={row.state === 'approved'}>{t(`pol.state.${str(row.state)}`)}</Pill>
+                    <StatusPill
+                      icon={row.state === 'approved' ? CircleCheck : row.state === 'retired' ? Archive : PencilLine}
+                      tone={row.state === 'retired' ? 'ended' : 'normal'}
+                    >
+                      {t(`pol.state.${str(row.state)}`)}
+                    </StatusPill>
                   </div>
                   {typeof row.approved_at === 'number' ? (
                     <p className={helper}>
@@ -1052,7 +1089,11 @@ function Terms({catalog, setNotice, refresh}: {catalog: Catalog; setNotice: (n: 
       <PolicySheet
         open={editing !== null}
         onOpenChange={open => {
-          if (!open) setEditing(null);
+          // Closing reloads the catalog, so a sheet reopened after a refusal has the current version.
+          if (!open) {
+            setEditing(null);
+            refresh();
+          }
         }}
         row={editing === 'new' ? null : editing}
         setNotice={setNotice}
@@ -1176,8 +1217,12 @@ function Team({catalog, setNotice, refresh}: {catalog: Catalog; setNotice: (n: N
             <div className="flex min-w-0 flex-col gap-1">
               <span className="break-all text-base leading-6 text-ink">{str(row.email)}</span>
               <div className="flex flex-wrap items-center gap-2">
-                <Pill>{t(`role.${str(row.role)}`)}</Pill>
-                <Pill strong={!row.active}>{row.active ? t('team.active') : t('team.inactive')}</Pill>
+                <StatusPill icon={row.role === 'owner' ? KeyRound : User} tone="normal">
+                  {t(`role.${str(row.role)}`)}
+                </StatusPill>
+                <StatusPill icon={row.active ? CircleCheck : CircleX} tone={row.active ? 'normal' : 'ended'}>
+                  {row.active ? t('team.active') : t('team.inactive')}
+                </StatusPill>
               </div>
             </div>
             <Button variant="ghost" className="shrink-0" onClick={() => setEditing(row)}>
@@ -1190,7 +1235,11 @@ function Team({catalog, setNotice, refresh}: {catalog: Catalog; setNotice: (n: N
       <TeamDialog
         open={editing !== null}
         onOpenChange={open => {
-          if (!open) setEditing(null);
+          // Closing reloads the catalog, so a sheet reopened after a refusal has the current version.
+          if (!open) {
+            setEditing(null);
+            refresh();
+          }
         }}
         row={editing === 'new' ? null : editing}
         setNotice={setNotice}
@@ -1221,6 +1270,7 @@ export function Settings() {
   const {query, reload} = useQuery<Catalog>('/api/equipo/catalog');
   const owner = me.role === 'owner';
   const refresh = () => void reload(true);
+  const refreshCounts = useRefreshCounts();
   const tabs = TABS.filter(([value]) =>
     value === 'equipo' ? owner : value === 'demostracion' ? owner && me.demo : true,
   );
@@ -1312,6 +1362,8 @@ export function Settings() {
                         const result = await run('/api/equipo/demo/reset', {});
                         setNotice(outcome(result, t('reset.done')));
                         refresh();
+                        // The reset empties the queues: the header's counts follow.
+                        refreshCounts();
                       }}
                     />
                   </Panel>

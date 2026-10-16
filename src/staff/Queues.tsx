@@ -1,7 +1,7 @@
 // Staff queues: Excepciones, guest requests, tonight's check-in list and the audit history.
 import {useEffect, useId, useRef, useState} from 'react';
 import {motion} from 'motion/react';
-import {ArrowLeftRight, CalendarX, CircleCheck, CircleX, Inbox, MessageSquareText} from 'lucide-react';
+import {ArrowLeftRight, CalendarX, CircleCheck, CircleX, Inbox, MessageSquareText, RotateCw} from 'lucide-react';
 import {formatLongDate, formatShortDate, formatTime, prDateKey} from '../../shared/time.ts';
 import {formatMoney} from '../lib/format.ts';
 import {Link} from '../lib/router.tsx';
@@ -33,7 +33,7 @@ import {
   useStaffT,
   type Notice,
 } from './ui.tsx';
-import {SessionPicker} from './rows.tsx';
+import {SessionPicker, useSessionOptions} from './rows.tsx';
 import {AuditRow, historyType, type HistoryType} from './history.tsx';
 import {useMe, useRefreshCounts} from './me.ts';
 import type {AuditEvent, Catalog, StaffBookingRow} from './types.ts';
@@ -49,7 +49,7 @@ function ExceptionRow({
 }: {
   booking: StaffBookingRow;
   busy: boolean;
-  onAct: (booking: StaffBookingRow, body: Resolve) => Promise<boolean>;
+  onAct: (booking: StaffBookingRow, body: Resolve) => Promise<boolean | Notice>;
 }) {
   const {t, lang} = useStaffT();
   const ids = useId();
@@ -132,20 +132,31 @@ export function Exceptions() {
       expectedVersion: booking.version,
     });
     const next = outcome(result, t('bk.done'));
-    setNotice(
+    const shown: Notice =
       result.kind === 'ok' || body.action === 'cancel'
         ? next
-        : {tone: 'problem', text: `${next?.text ?? ''} ${t('exc.failKept')}`},
-    );
+        : {tone: 'problem', text: `${next?.text ?? ''} ${t('exc.failKept')}`};
+    setNotice(shown);
     void reload(true);
     refreshCounts();
-    return result.kind === 'ok';
+    // A refusal is also shown inside the dialog that asked, next to its buttons.
+    return result.kind === 'ok' || (result.kind === 'error' && result.code === 'version_conflict') ? true : shown;
   };
 
   return (
     <Page>
       <PageHeader title={t('exc.title')} help={t('exc.help')} />
-      {catalog.query.state === 'ready' ? (
+      {/* Nothing while loading. If the settings can't be read, the page says so rather than
+          calling the process unapproved; the server still refuses a resolution without it. */}
+      {catalog.query.state === 'error' ? (
+        <Callout role="alert" className="mb-6">
+          <p className="font-medium">{t('exc.processLoadError')}</p>
+          <Button variant="secondary" className="self-start" onClick={() => void catalog.reload()}>
+            <RotateCw aria-hidden="true" />
+            {t('app.retry')}
+          </Button>
+        </Callout>
+      ) : catalog.query.state === 'ready' ? (
         approved && processText ? (
           <Disclosure summary={t('exc.showProcess')} className="mb-6">
             <p className="whitespace-pre-line rounded-2xl border border-stone-300 bg-surface p-4 text-base leading-6 text-ink">
@@ -438,7 +449,11 @@ export function Tonight() {
                           {list.map(b => (
                             <li
                               key={b.id}
-                              className={cn(rowItem, 'flex min-h-16 flex-wrap items-center justify-between gap-3')}
+                              className={cn(
+                                rowItem,
+                                // Phones stack the row, so the name, reference and note keep the width.
+                                'flex min-h-16 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between',
+                              )}
                             >
                               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                                 <div className="flex flex-wrap items-center gap-2">
@@ -451,19 +466,21 @@ export function Tonight() {
                                   <Demo synthetic={b.synthetic} />
                                 </div>
                                 <p className={cn(helper, numbers)}>
-                                  {b.party_size === 1 ? t('bk.person') : t('bk.people', {count: b.party_size})} ·{' '}
-                                  {b.reference}
+                                  <span className="whitespace-nowrap">
+                                    {b.party_size === 1 ? t('bk.person') : t('bk.people', {count: b.party_size})} ·
+                                  </span>{' '}
+                                  <span className="whitespace-nowrap">{b.reference}</span>
                                 </p>
                                 {b.note ? (
                                   <p className="flex items-start gap-1.5 text-sm leading-5 text-ink">
                                     <MessageSquareText className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                                    <span className="line-clamp-1 break-words">{b.note}</span>
+                                    <span className="line-clamp-2 break-words">{b.note}</span>
                                   </p>
                                 ) : null}
                               </div>
                               {b.status === 'confirmed' ? (
                                 b.checked_in_at ? (
-                                  <div className="flex flex-wrap items-center gap-2">
+                                  <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                                     <span
                                       className={cn(
                                         'inline-flex items-center gap-1.5 text-sm font-medium leading-5 text-ink',
@@ -476,6 +493,7 @@ export function Tonight() {
                                     <Button
                                       ref={buttonRef(b.id)}
                                       variant="secondary"
+                                      className="w-full sm:w-auto"
                                       disabled={busy}
                                       onClick={() => void toggle(b)}
                                     >
@@ -486,6 +504,7 @@ export function Tonight() {
                                   <Button
                                     ref={buttonRef(b.id)}
                                     variant="primary"
+                                    className="w-full sm:w-auto"
                                     disabled={busy}
                                     onClick={() => void toggle(b)}
                                   >
@@ -493,7 +512,9 @@ export function Tonight() {
                                   </Button>
                                 )
                               ) : (
-                                <BookingStatus status={b.status} />
+                                <span className="self-start sm:self-auto">
+                                  <BookingStatus status={b.status} />
+                                </span>
                               )}
                             </li>
                           ))}
@@ -531,6 +552,12 @@ export function History() {
   const ids = useId();
   const [type, setType] = useState<TypeFilter>('all');
   const {query, reload} = useQuery<{events: AuditEvent[]}>('/api/equipo/audit?limit=200');
+  // One session list for the page, so links read as a date and title rather than an id.
+  const sessions = useSessionOptions();
+  const sessionName = (id: string) => {
+    const session = sessions.list.find(s => s.id === id);
+    return session ? sessions.label(session) : undefined;
+  };
   return (
     <Page>
       <PageHeader title={t('hist.title')} />
@@ -564,7 +591,7 @@ export function History() {
                     </h2>
                     <ul className={flushList}>
                       {list.map(event => (
-                        <AuditRow key={event.mutation_id} event={event} />
+                        <AuditRow key={event.mutation_id} event={event} sessionName={sessionName} />
                       ))}
                     </ul>
                   </div>

@@ -66,6 +66,7 @@ import {
   SelectField,
   SessionState,
   TextField,
+  useOnOpen,
   useOutcome,
   useStaffT,
   type Notice,
@@ -316,7 +317,7 @@ function DayGroups({sessions}: {sessions: StaffSession[]}) {
           <h3 className="px-4 pb-2 text-sm font-semibold leading-5 text-muted first-letter:uppercase sm:px-6">
             {key === 'tbd' ? t('staff.dateTbd') : formatLongDate(list[0].starts_at!, lang)}
           </h3>
-          <SessionRows sessions={list} timeOnly={key !== 'tbd'} />
+          <SessionRows sessions={list} timeOnly />
         </div>
       ))}
     </div>
@@ -394,7 +395,8 @@ function Preview({
         </QueryView>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Link to={`/equipo/sesiones/${session.id}/`} className={buttonVariants({variant: 'primary'})}>
+        {/* "Nueva sesión" is the page's one amber action. */}
+        <Link to={`/equipo/sesiones/${session.id}/`} className={buttonVariants({variant: 'secondary'})}>
           {t('ses.openSession')}
         </Link>
         <Button variant="secondary" onClick={() => onEntry(session.id)}>
@@ -433,7 +435,9 @@ export function CalendarView() {
   const filtered = experience === 'all' ? sessions : sessions.filter(s => s.experience_id === experience);
   const dated = filtered.filter(s => s.starts_at !== null);
   const undated = filtered.filter(s => s.starts_at === null);
-  const next = dated.find(s => s.starts_at! >= me.now) ?? dated[0] ?? undated[0] ?? null;
+  // The preview's default: the next session still on (not cancelled or archived).
+  const live = (s: StaffSession) => s.state === 'published' || s.state === 'draft';
+  const next = dated.find(s => s.starts_at! >= me.now && live(s)) ?? dated.find(live) ?? undated.find(live) ?? null;
   const selected = filtered.find(s => s.id === selectedId) ?? null;
   const shown = selected ?? next;
 
@@ -536,6 +540,12 @@ export function CalendarView() {
         if (view === 'grid' && wide) {
           return (
             <div className="flex flex-col gap-4">
+              {dated.some(s => {
+                const p = prDateParts(s.starts_at!);
+                return p.year === month.year && p.month === month.month;
+              }) ? null : (
+                <p className={cn(helper, 'rounded-2xl bg-stone-100 p-3 text-ink')}>{t('ses.empty')}</p>
+              )}
               <StaffMonthGrid
                 month={month}
                 sessions={dated}
@@ -595,6 +605,8 @@ export function CalendarView() {
           if (!open) setEntryFor(null);
         }}
         sessionId={entryFor}
+        // It names the session it was opened for, as the session page does.
+        locked
       />
     </Page>
   );
@@ -995,6 +1007,11 @@ function SessionSheet({
   const catalog = useQuery<Catalog>(open ? '/api/equipo/catalog' : null);
   const [notice, setNotice] = useState<Notice>(null);
   const [stale, setStale] = useState(false);
+  // However it was closed, it reopens without the last refusal.
+  useOnOpen(open, () => {
+    setNotice(null);
+    setStale(false);
+  });
 
   const save = async (fields: Record<string, unknown>) => {
     const result = row
@@ -1140,7 +1157,8 @@ export function SessionPage({id}: {id: string}) {
         const experience = data?.experiences.find(e => e.id === session.experience_id);
         const venue = data?.venues.find(v => v.id === session.venue_id);
         const policy = data?.policies.find(p => p.id === session.policy_version_id);
-        const title = experience?.title_es ?? t('nav.sessions');
+        // Until the catalog arrives the title and the place and terms are unknown, not missing.
+        const title = experience?.title_es ?? (catalog.query.state === 'loading' ? t('app.loading') : t('bk.session'));
         const price =
           session.price_status === 'approved' && session.price_cents !== null && session.currency
             ? formatMoney(session.price_cents, session.currency, lang)
@@ -1204,7 +1222,13 @@ export function SessionPage({id}: {id: string}) {
                       t('staff.dateTbd')
                     ) : (
                       <span className={numbers}>
-                        {formatShortDate(session.starts_at, lang)}, {formatTime(session.starts_at, lang)}
+                        {formatShortDate(session.starts_at, lang)},{' '}
+                        <span className="whitespace-nowrap">{formatTime(session.starts_at, lang)}</span>
+                        {session.ends_at !== null ? (
+                          <>
+                            –<span className="whitespace-nowrap">{formatTime(session.ends_at, lang)}</span>
+                          </>
+                        ) : null}
                       </span>
                     )}
                   </span>
@@ -1293,46 +1317,61 @@ export function SessionPage({id}: {id: string}) {
                 )}
               </Panel>
               <Panel title={t('ses.details')} className="lg:col-start-2 lg:row-start-2">
-                <Facts
-                  columns={1}
-                  items={[
-                    [
-                      t('ses.venue'),
-                      venue
-                        ? `${venue.name} · ${venue.approved ? t('venue.ok') : t('venue.pending')}`
-                        : t('ses.noVenue'),
-                    ],
-                    [
-                      t('ses.capacity'),
-                      session.capacity === null ? (
-                        t('ses.capacityTbd')
-                      ) : (
-                        <span className={numbers}>{session.capacity}</span>
-                      ),
-                    ],
-                    [t('ses.blocked'), <span className={numbers}>{session.blocked_seats}</span>],
-                    [t('ses.party'), group],
-                    [
-                      t('ses.mode'),
-                      t(session.booking_mode === 'confirmed' ? 'ses.mode.confirmed' : 'ses.mode.inquiry'),
-                    ],
-                    [t('ses.price'), price],
-                    [
-                      t('ses.policy'),
-                      policy ? `${policy.title} · ${t(`pol.state.${policy.state}`)}` : t('ses.noPolicy'),
-                    ],
-                    [
-                      t('ses.threshold'),
-                      session.low_seats_threshold === null ? t('ses.notSet') : String(session.low_seats_threshold),
-                    ],
-                  ]}
-                />
+                {/* The place and the terms come from the catalog: loading or an error is shown as such. */}
+                <QueryView query={catalog.query} onRetry={() => void catalog.reload()}>
+                  {() => (
+                    <Facts
+                      columns={1}
+                      items={[
+                        [
+                          t('ses.venue'),
+                          venue
+                            ? `${venue.name} · ${venue.approved ? t('venue.ok') : t('venue.pending')}`
+                            : session.venue_id === null
+                              ? t('ses.noVenue')
+                              : session.venue_id,
+                        ],
+                        [
+                          t('ses.capacity'),
+                          session.capacity === null ? (
+                            t('ses.capacityTbd')
+                          ) : (
+                            <span className={numbers}>{session.capacity}</span>
+                          ),
+                        ],
+                        [t('ses.blocked'), <span className={numbers}>{session.blocked_seats}</span>],
+                        [t('ses.party'), group],
+                        [
+                          t('ses.mode'),
+                          t(session.booking_mode === 'confirmed' ? 'ses.mode.confirmed' : 'ses.mode.inquiry'),
+                        ],
+                        [t('ses.price'), price],
+                        [
+                          t('ses.policy'),
+                          policy
+                            ? `${policy.title} · ${t(`pol.state.${policy.state}`)}`
+                            : session.policy_version_id === null
+                              ? t('ses.noPolicy')
+                              : session.policy_version_id,
+                        ],
+                        [
+                          t('ses.threshold'),
+                          session.low_seats_threshold === null ? t('ses.notSet') : String(session.low_seats_threshold),
+                        ],
+                      ]}
+                    />
+                  )}
+                </QueryView>
               </Panel>
             </div>
 
             <SessionSheet
               open={editing}
-              onOpenChange={setEditing}
+              onOpenChange={next => {
+                setEditing(next);
+                // Closing reloads the session, so the next edit starts from its current version.
+                if (!next) void one.reload(true);
+              }}
               row={session}
               onReloadCurrent={() => void one.reload(true)}
               onSaved={() => {

@@ -7,8 +7,11 @@ import {
   ArrowLeftRight,
   ArrowRightLeft,
   ChevronLeft,
+  CircleAlert,
+  CircleCheck,
   CircleX,
   Copy,
+  Hourglass,
   Link2,
   Pencil,
   Plus,
@@ -23,7 +26,7 @@ import {formatMoney} from '../lib/format.ts';
 import {copyText} from '../lib/copy.ts';
 import {newToken} from '../lib/ids.ts';
 import {Link, navigate, useLocation} from '../lib/router.tsx';
-import {helper, numbers, rows, workspace} from '../lib/styles.ts';
+import {helper, numbers, rows, sectionTitle, workspace} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
 import {Dialog} from '../components/ui/dialog.tsx';
@@ -46,9 +49,9 @@ import {
   Page,
   PageHeader,
   Panel,
-  Pill,
   QueryView,
   SelectField,
+  StatusPill,
   TextField,
   flushList,
   rowItem,
@@ -359,6 +362,24 @@ export function ManualEntrySheet({
       closeLabel={t('staff.close')}
       footer={
         <div>
+          {/* A possible duplicate sits beside "Guardar solicitud", where it is seen before saving. */}
+          {found.length ? (
+            <Callout role="status" className="mb-3">
+              <p className="font-semibold">{t('bk.duplicates')}</p>
+              <ul className="flex max-h-28 flex-col gap-1 overflow-y-auto">
+                {found.map(d => (
+                  <li key={d.id}>
+                    <Link
+                      to={`/equipo/reservaciones/${d.id}/`}
+                      className={cn(buttonVariants({variant: 'link'}), 'inline-flex min-h-11 items-center')}
+                    >
+                      {d.reference} · {d.lead_name} · {t(`bstatus.${d.status}`)}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Callout>
+          ) : null}
           <NoticeLine notice={notice} className="mb-3" />
           <FormFooter formId={formId} label={t('bk.saveInquiry')} busy={busy} onCancel={() => onOpenChange(false)} />
         </div>
@@ -391,7 +412,7 @@ export function ManualEntrySheet({
             ) : null}
           </div>
         )}
-        <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-start gap-4">
+        <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-[minmax(0,1fr)_6rem]">
           <SelectField
             id={`${ids}-source`}
             label={t('bk.source')}
@@ -452,20 +473,6 @@ export function ManualEntrySheet({
           maxLength={280}
           counter
         />
-        {found.length ? (
-          <Callout role="status">
-            <p className="font-semibold">{t('bk.duplicates')}</p>
-            <ul className="flex flex-col gap-1">
-              {found.map(d => (
-                <li key={d.id}>
-                  <Link to={`/equipo/reservaciones/${d.id}/`} className={buttonVariants({variant: 'link'})}>
-                    {d.reference} · {d.lead_name} · {t(`bstatus.${d.status}`)}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Callout>
-        ) : null}
       </form>
     </Dialog>
   );
@@ -526,7 +533,14 @@ export function BookingPage({id}: {id: string}) {
           setNotice(next);
           void reload(true);
           refreshCounts();
-          return result.kind === 'ok';
+          if (result.kind === 'ok') return true;
+          // Someone else changed it: close the dialog, so it reopens with the current record
+          // (a second try can't overwrite what they did). The page notice says why.
+          if (result.kind === 'error' && result.code === 'version_conflict') {
+            setDialog(null);
+            return true;
+          }
+          return next;
         };
 
         const reissue = async () => {
@@ -650,12 +664,16 @@ export function BookingPage({id}: {id: string}) {
                 </Link>
               }
               title={b.lead_name}
+              // An exception explains itself here too, as the Excepciones page does.
+              help={status === 'exception' ? t('exc.help') : undefined}
               meta={
                 <>
                   <Demo synthetic={b.synthetic} />
                   <BookingStatus status={status} />
                   {b.exception_reason ? (
-                    <Pill strong>{t('bk.exceptionReason', {reason: t(`reason.${b.exception_reason}`)})}</Pill>
+                    <StatusPill icon={CircleAlert} tone="normal">
+                      {t('bk.exceptionReason', {reason: t(`reason.${b.exception_reason}`)})}
+                    </StatusPill>
                   ) : null}
                   <span className={cn('text-sm leading-5 text-ink', numbers)}>{b.reference}</span>
                   <span className={cn('text-sm leading-5 text-ink', numbers)}>{people}</span>
@@ -665,11 +683,14 @@ export function BookingPage({id}: {id: string}) {
                         {session.title_es}
                       </Link>
                       {' · '}
-                      <span className={numbers}>
-                        {session.starts_at === null
-                          ? t('staff.dateTbd')
-                          : `${formatShortDate(session.starts_at, lang)}, ${formatTime(session.starts_at, lang)}`}
-                      </span>
+                      {session.starts_at === null ? (
+                        t('staff.dateTbd')
+                      ) : (
+                        <span className={numbers}>
+                          {formatShortDate(session.starts_at, lang)},{' '}
+                          <span className="whitespace-nowrap">{formatTime(session.starts_at, lang)}</span>
+                        </span>
+                      )}
                     </span>
                   ) : null}
                 </>
@@ -838,7 +859,12 @@ export function BookingPage({id}: {id: string}) {
                           <span className={numbers}>
                             {sessionTitle(p.session_id)} · {formatShortDate(p.created_at, lang)}
                           </span>
-                          <Pill strong={p.status === 'open'}>{t(`bk.proposal.${p.status}`)}</Pill>
+                          <StatusPill
+                            icon={p.status === 'open' ? Hourglass : p.status === 'accepted' ? CircleCheck : CircleX}
+                            tone={p.status === 'withdrawn' ? 'ended' : 'normal'}
+                          >
+                            {t(`bk.proposal.${p.status}`)}
+                          </StatusPill>
                         </li>
                       ))}
                     </ul>
@@ -854,32 +880,38 @@ export function BookingPage({id}: {id: string}) {
                           </p>
                           {r.details ? <p className="break-words">{r.details}</p> : null}
                           <span className="self-start">
-                            <Pill>{t('req.resolved')}</Pill>
+                            <StatusPill icon={CircleCheck} tone="ended">
+                              {t('req.handled')}
+                            </StatusPill>
                           </span>
                         </li>
                       ))}
                     </ul>
                   </Panel>
                 ) : null}
-                <Panel>
+                {/* The history needs no card of its own: a button when there is something to show, a line when not. */}
+                {data.audit.length ? (
                   <Disclosure summary={t('bk.historyCount', {count: data.audit.length})}>
-                    {data.audit.length ? (
-                      <ul className={rows}>
-                        {data.audit.map(event => (
-                          <AuditRow
-                            key={event.mutation_id}
-                            event={event}
-                            showRecord={false}
-                            withDate
-                            className="px-0 sm:px-0"
-                          />
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-sm leading-5 text-ink">{t('hist.empty')}</p>
-                    )}
+                    <ul className={rows}>
+                      {data.audit.map(event => (
+                        <AuditRow
+                          key={event.mutation_id}
+                          event={event}
+                          showRecord={false}
+                          withDate
+                          className="px-0 sm:px-0"
+                        />
+                      ))}
+                    </ul>
                   </Disclosure>
-                </Panel>
+                ) : (
+                  <section aria-labelledby={`${ids}-history`} className="flex flex-col gap-1 px-1">
+                    <h2 id={`${ids}-history`} className={sectionTitle}>
+                      {t('bk.history')}
+                    </h2>
+                    <p className={helper}>{t('hist.empty')}</p>
+                  </section>
+                )}
               </div>
             </div>
 
@@ -973,7 +1005,9 @@ function ReplyDialog({open, onOpenChange, text}: {open: boolean; onOpenChange: (
           readOnly
           value={text}
           aria-label={t('bk.replyTitle')}
-          className="block min-h-32 w-full rounded-2xl border border-stone-500 bg-surface p-3 text-base leading-6 text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          // The whole draft shows, so it can be read before copying. Browsers without field-sizing use the rows.
+          rows={Math.min(14, text.split('\n').length + 3)}
+          className="block min-h-32 max-h-[60dvh] w-full rounded-2xl border border-stone-500 bg-surface p-3 text-base leading-6 text-ink [field-sizing:content] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         />
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="secondary" onClick={async () => setCopied((await copyText(text)) ? 'ok' : 'fail')}>
@@ -999,7 +1033,7 @@ function EditBooking({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   booking: StaffBookingRow;
-  onSent: (body: Record<string, unknown>, ok: string) => Promise<boolean>;
+  onSent: (body: Record<string, unknown>, ok: string) => Promise<boolean | Notice>;
   busy: boolean;
 }) {
   const {t} = useStaffT();
@@ -1117,6 +1151,11 @@ function Payments({
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [problem, setProblem] = useState<Notice>(null);
+  // However it was closed ("No, volver" or Escape), it reopens without the last refusal.
+  useOnOpen(open, () => {
+    setProblem(null);
+    setError(null);
+  });
   const reversed = new Set(data.payments.map(p => p.reverses_payment_id).filter(Boolean));
   const reversible = data.payments.filter(p => p.kind !== 'reversal' && !reversed.has(p.id));
   const methods = [

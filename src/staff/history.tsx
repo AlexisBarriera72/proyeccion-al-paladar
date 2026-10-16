@@ -86,6 +86,8 @@ function actorName(actor: string, t: (key: string) => string): string {
 
 export function historyType(event: AuditEvent): HistoryType {
   if (event.action === 'record_payment') return 'payments';
+  // A new reservation or request is recorded against its session, but staff look for it under Reservaciones.
+  if (event.action === 'create_reservation' || event.action === 'create_inquiry') return 'bookings';
   if (event.target_type === 'booking' || event.target_type === 'request') return 'bookings';
   if (event.target_type === 'session') return 'sessions';
   return 'settings';
@@ -185,7 +187,10 @@ function ChangeTable({event}: {event: AuditEvent}) {
   );
 }
 
-function RecordLink({event}: {event: AuditEvent}) {
+/** A session's readable name (date and title) from the page's one session list; undefined if it isn't known. */
+export type SessionName = (id: string) => string | undefined;
+
+function RecordLink({event, sessionName}: {event: AuditEvent; sessionName?: SessionName}) {
   const {t} = useStaffT();
   const snapshot = parse(event.after_json) ?? parse(event.before_json) ?? {};
   // 44px tall, like every other target.
@@ -208,7 +213,7 @@ function RecordLink({event}: {event: AuditEvent}) {
   if (event.target_type === 'session') {
     return (
       <Link to={`/equipo/sesiones/${event.target_id}/`} className={link}>
-        {t('hist.record.session', {ref: event.target_id})}
+        {t('hist.record.session', {ref: sessionName?.(event.target_id) ?? event.target_id})}
       </Link>
     );
   }
@@ -219,11 +224,13 @@ function RecordLink({event}: {event: AuditEvent}) {
 export function AuditRow({
   event,
   showRecord = true,
+  sessionName,
   withDate,
   className,
 }: {
   event: AuditEvent;
   showRecord?: boolean;
+  sessionName?: SessionName;
   withDate?: boolean;
   className?: string;
 }) {
@@ -234,7 +241,7 @@ export function AuditRow({
     <li className={cn(rowItem, 'flex flex-col gap-1', className)}>
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base font-medium leading-6 text-ink">
         <span>{actionLabel(t, event.action)}</span>
-        {showRecord ? <RecordLink event={event} /> : null}
+        {showRecord ? <RecordLink event={event} sessionName={sessionName} /> : null}
       </p>
       <p className={cn(helper, numbers, 'break-all')}>
         {t('hist.by', {

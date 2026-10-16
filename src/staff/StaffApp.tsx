@@ -332,7 +332,8 @@ function Frame({me, children}: {me: Me | null; children: ReactNode}) {
                 <span className="hidden font-normal text-muted lg:inline"> · {t('staff.title')}</span>
               </p>
               <p className="text-sm leading-5 text-muted lg:hidden">
-                {me ? `${t('staff.title')} · ${t(`role.${me.role}`)}` : t('staff.title')}
+                {/* "Equipo · Dueño" for owners; just "Equipo" for the staff role, not "Equipo · Equipo". */}
+                {me?.role === 'owner' ? `${t('staff.title')} · ${t('role.owner')}` : t('staff.title')}
               </p>
             </div>
             <div className={cn('flex shrink-0 items-center gap-1', me && 'hidden lg:flex')}>

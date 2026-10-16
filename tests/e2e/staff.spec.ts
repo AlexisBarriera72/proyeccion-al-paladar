@@ -1,6 +1,7 @@
 // Staff: access by role, the restricted Staff role, manual entry with a duplicate warning,
 // recording a test payment before confirming, the "Más acciones" menu, the section links on
-// computers and phones, and Configuración's tabs.
+// computers and phones, Configuración's tabs, and Historial's types and session names.
+import {randomBytes, randomUUID} from 'node:crypto';
 import {expect, test} from '@playwright/test';
 import {OWNER, STAFF, invisibleInMain} from './fixtures.ts';
 
@@ -136,4 +137,40 @@ test('every staff page finishes showing its panels (none stays invisible)', asyn
   await page.goto('/equipo/configuracion/');
   await page.getByRole('tab', {name: 'Condiciones'}).click();
   expect(await invisibleInMain(page), 'after a tab change').toEqual([]);
+});
+
+test('Historial files a new reservation under Reservaciones and names its session', async ({page}, info) => {
+  // A reservation made through the API is recorded against its session.
+  const token = randomBytes(32).toString('base64url');
+  const {session} = await (await page.request.get('/api/public/sessions/demo-prueba-a')).json();
+  const made = await page.request.post('/api/public/bookings', {
+    headers: {'Idempotency-Key': randomUUID(), Origin: 'http://127.0.0.1:8788'},
+    data: {
+      intent: 'reserve',
+      sessionId: 'demo-prueba-a',
+      partySize: 1,
+      leadName: `Cliente e2e historial ${info.project.name}`,
+      contactKind: 'email',
+      contactValue: `historial-${info.project.name}@example.com`,
+      note: null,
+      token,
+      terms: {
+        policyVersionId: session.terms.policyVersionId,
+        priceStatus: session.terms.priceStatus,
+        unitPriceCents: session.terms.unitPriceCents,
+        currency: session.terms.currency,
+      },
+      acceptedTerms: true,
+    },
+  });
+  expect(made.status()).toBe(200);
+  await page.setExtraHTTPHeaders(OWNER);
+  await page.goto('/equipo/historial/');
+  await page.getByLabel('Tipo').selectOption({label: 'Reservaciones'});
+  await expect(page.getByText('Reservación creada').first()).toBeVisible();
+  // The link reads as the session's date and title, not its id.
+  const link = page.getByRole('link', {name: /^Sesión .+ · DEMO · Función de prueba$/}).first();
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute('href', '/equipo/sesiones/demo-prueba-a/');
+  await expect(page.getByRole('link', {name: 'Sesión demo-prueba-a'})).toHaveCount(0);
 });
