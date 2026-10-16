@@ -439,15 +439,15 @@ export function saveStaffMember(p: {
   // The last active owner can't be removed or demoted (nobody could manage staff after that).
   const keepsAnOwner: Check = {
     code: 'last_owner',
-    when: sql`(${p.role} = 'owner' AND ${p.active} = 1) OR EXISTS (SELECT 1 FROM staff_members o
-      WHERE o.role = 'owner' AND o.active = 1 AND o.email <> ${p.email})`,
+    when: sql`((${p.role} = 'owner' AND ${p.active} = 1) OR EXISTS (SELECT 1 FROM staff_members o
+      WHERE o.role = 'owner' AND o.active = 1 AND o.email <> ${p.email}))`,
   };
   return {
     snapshot,
     writes: guard => [
       sql`INSERT INTO staff_members (email, role, active, version, created_at, updated_at, last_mutation_id)
         SELECT ${p.email}, ${p.role}, ${p.active}, 1, ${p.now}, ${p.now}, ${p.mutationId}
-        WHERE ${keepsAnOwner.when} AND ${guard}
+        WHERE ${allOf([keepsAnOwner])} AND ${guard}
         ON CONFLICT (email) DO UPDATE SET role = excluded.role, active = excluded.active,
           version = staff_members.version + 1, updated_at = excluded.updated_at, last_mutation_id = excluded.last_mutation_id`,
     ],

@@ -14,7 +14,9 @@ export interface Check {
   when: Sql;
 }
 
-export const allOf = (checks: Check[]) => and(checks.map(check => check.when));
+// Each check is parenthesized, so a check with a top-level OR can never swallow the checks or
+// the ledger guard that follow it.
+export const allOf = (checks: Check[]) => and(checks.map(check => sql`(${check.when})`));
 
 /** The first failing check's code. NULL counts as failing, as it does in a WHERE. */
 export function firstFailure(checks: Check[], fallback = 'rejected'): Sql {
@@ -605,7 +607,7 @@ export function recordPayment(p: PaymentInput): ActionSpec {
         p.kind === 'refund'
           ? sql`${net('b')} >= ${p.amountCents}`
           : p.kind === 'reversal'
-            ? sql`(SELECT o.kind FROM payments o WHERE o.id = ${p.reversesPaymentId}) <> 'payment' OR ${net('b')} >= ${p.amountCents}`
+            ? sql`((SELECT o.kind FROM payments o WHERE o.id = ${p.reversesPaymentId}) <> 'payment' OR ${net('b')} >= ${p.amountCents})`
             : raw('1'),
     },
     {

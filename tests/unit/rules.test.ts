@@ -436,6 +436,24 @@ test('exception resolution: same session and another session, counting zero exis
   assert.equal(confirmedSeats(db, 'ses-pre'), 4);
 });
 
+test('money: a reversal of a refund keeps every check (it can be reversed once, for its amount)', async () => {
+  const db = freshDb();
+  const {input} = await reserve(db, 'ses-pre', 2);
+  const id = input.bookingId;
+  assert.equal((await pay(db, id, 'payment', 5000, {ref: 'ATH-9'})).result.kind, 'applied');
+  const refund = await pay(db, id, 'refund', 1000);
+  assert.equal(refund.result.kind, 'applied');
+  const wrongAmount = await pay(db, id, 'reversal', 9000, {reverses: refund.paymentId});
+  assert.equal(wrongAmount.result.kind === 'rejected' && wrongAmount.result.reason, 'reversal_invalid');
+  const undo = await pay(db, id, 'reversal', 1000, {reverses: refund.paymentId});
+  assert.equal(undo.result.kind, 'applied');
+  const again = await pay(db, id, 'reversal', 1000, {reverses: refund.paymentId});
+  assert.equal(again.result.kind === 'rejected' && again.result.reason, 'reversal_invalid');
+  const reused = await pay(db, id, 'payment', 100, {ref: 'ATH-9'});
+  assert.equal(reused.result.kind === 'rejected' && reused.result.reason, 'duplicate_reference');
+  assert.equal(count(db, 'payments'), 3, 'the payment, the refund and one reversal');
+});
+
 test('money: refunds after cancellation, limits, references and reversals', async () => {
   const db = freshDb();
   const {input} = await reserve(db, 'ses-pre', 2);

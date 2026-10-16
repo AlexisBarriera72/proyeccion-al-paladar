@@ -1,6 +1,7 @@
 // Sessions, the catalog, settings, staff and the demo reset, on the real SQL.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
 import {act, count, DAY, freshDb, NOW, OWNER, reserve, SHOW} from './helpers.ts';
 import {
   createSession,
@@ -303,6 +304,24 @@ test('the last active owner can’t be removed', async () => {
       }),
   );
   assert.equal(r.kind === 'rejected' && r.reason, 'last_owner');
+});
+
+test('a staff-member save keeps the ledger guard: a reused ID with other data writes nothing', async () => {
+  const db = freshDb();
+  const save = (email: string, mutationId: string, payload: unknown) =>
+    act(db, {action: 'staff_save', targetType: 'staff', targetId: email, payload, mutationId}, mid =>
+      saveStaffMember({email, role: 'owner', active: true, actor: OWNER, mutationId: mid, now: NOW}),
+    );
+  const mutationId = randomUUID();
+  const first = await save('nuevo@example.com', mutationId, {role: 'owner'});
+  assert.equal(first.kind, 'applied');
+  const audit = count(db, 'audit_events');
+  // The same ID for another person: the binding differs, so the claim guard must block the write,
+  // even though this save keeps an owner (the check that used to bypass it).
+  const reuse = await save('otro@example.com', mutationId, {role: 'owner', other: true});
+  assert.equal(reuse.kind, 'conflict');
+  assert.equal(db.get(`SELECT email FROM staff_members WHERE email = 'otro@example.com'`), undefined);
+  assert.equal(count(db, 'audit_events'), audit);
 });
 
 test('the demo reset deletes and reseeds in one transaction, only in a demo or local database', async () => {
