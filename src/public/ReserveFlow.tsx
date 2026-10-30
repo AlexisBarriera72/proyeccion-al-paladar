@@ -15,7 +15,7 @@ import {readJson, remove, writeJson} from '../lib/storage.ts';
 import {copyText} from '../lib/copy.ts';
 import {formatMoney, pick} from '../lib/format.ts';
 import {SPRING} from '../lib/motion.ts';
-import {detailTitle, helper, inset, numbers, sectionTitle} from '../lib/styles.ts';
+import {detailTitle, helper, inset, kicker, numbers, sectionTitle} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Dialog} from '../components/ui/dialog.tsx';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
@@ -23,6 +23,8 @@ import {Field, Input, Textarea, describedBy} from '../components/ui/field.tsx';
 import {Checkbox, Choices} from '../components/ui/choice.tsx';
 import {Disclosure} from '../components/ui/disclosure.tsx';
 import {Price} from '../components/Price.tsx';
+import {Ticket, TicketDate} from '../components/Ticket.tsx';
+import {Popcorn} from '../components/Popcorn.tsx';
 import {PolicyBlock, WhenText} from './SessionDetail.tsx';
 import {CalendarExport} from './CalendarExport.tsx';
 
@@ -96,6 +98,8 @@ export function ReserveFlow({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState<Problem>(null);
   const [sending, setSending] = useState(false);
+  // True only right after the server confirmed this reservation; a reopened receipt stays still.
+  const [celebrate, setCelebrate] = useState(false);
   // Focus moves to each step's heading once that step is on screen, after the previous step has
   // left (the steps change with an exit animation), so the change is announced. The heading's
   // ref runs when the new step mounts; the effect below asks for it on every step change.
@@ -157,6 +161,7 @@ export function ReserveFlow({
     writeJson('session', receiptKey(session.id), next);
     setReceipt(next);
     setProblem(null);
+    setCelebrate(next.status === 'confirmed' && !next.replaced);
   };
 
   const submit = async (event: FormEvent) => {
@@ -296,6 +301,7 @@ export function ReserveFlow({
   const startOver = () => {
     remove('session', receiptKey(session.id));
     setReceipt(null);
+    setCelebrate(false);
     setDraftState(freshDraft(session, lockedKind ?? 'phone'));
   };
 
@@ -635,6 +641,7 @@ export function ReserveFlow({
         receipt={receipt!}
         manageUrl={manageUrl}
         headingRef={headingRef}
+        celebrate={celebrate}
         startOver={
           // Quiet and last: starting over clears this receipt, the only copy of the private link here.
           <Button variant="ghost" onClick={startOver} className="-ml-3">
@@ -705,12 +712,14 @@ function ReceiptView({
   receipt,
   manageUrl,
   headingRef,
+  celebrate,
   startOver,
 }: {
   session: PublicSession;
   receipt: Receipt;
   manageUrl: string | null;
   headingRef: Ref<HTMLHeadingElement>;
+  celebrate: boolean;
   startOver: ReactNode;
 }) {
   const {t, lang} = useT();
@@ -778,16 +787,43 @@ function ReceiptView({
           ) : null}
         </div>
       </div>
-      <dl className={cn(inset, 'grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2')}>
-        <dt className={helper}>{t('result.reference')}</dt>
-        <dd className={cn('text-base font-semibold leading-6 text-ink', numbers)}>{receipt.reference}</dd>
-        <dt className={helper}>{t('detail.when')}</dt>
-        <dd className="text-base leading-6 text-ink">
-          <WhenText session={session} />
-        </dd>
-        <dt className={helper}>{t('flow.step2')}</dt>
-        <dd className={cn('text-base leading-6 text-ink', numbers)}>{count}</dd>
-      </dl>
+      {receipt.status === 'confirmed' ? (
+        // Only a reservation the server confirmed becomes a ticket: it holds the places.
+        <div className="relative" data-ticket="">
+          <Ticket tone="wash" stub={<TicketDate ms={session.startsAt} />}>
+            <dl className="space-y-2">
+              <div>
+                <dt className={cn(kicker, 'text-accent')}>{t('result.reference')}</dt>
+                <dd className={cn('font-display text-[22px] font-semibold leading-7 text-ink', numbers)}>
+                  {receipt.reference}
+                </dd>
+              </div>
+              <div>
+                <dt className={cn(kicker, 'text-muted')}>{t('detail.when')}</dt>
+                <dd className="text-sm leading-5 text-ink">
+                  <WhenText session={session} />
+                </dd>
+              </div>
+              <div>
+                <dt className={cn(kicker, 'text-muted')}>{t('flow.step2')}</dt>
+                <dd className={cn('text-sm leading-5 text-ink', numbers)}>{count}</dd>
+              </div>
+            </dl>
+          </Ticket>
+          <Popcorn active={celebrate} />
+        </div>
+      ) : (
+        <dl className={cn(inset, 'grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2')}>
+          <dt className={helper}>{t('result.reference')}</dt>
+          <dd className={cn('text-base font-semibold leading-6 text-ink', numbers)}>{receipt.reference}</dd>
+          <dt className={helper}>{t('detail.when')}</dt>
+          <dd className="text-base leading-6 text-ink">
+            <WhenText session={session} />
+          </dd>
+          <dt className={helper}>{t('flow.step2')}</dt>
+          <dd className={cn('text-base leading-6 text-ink', numbers)}>{count}</dd>
+        </dl>
+      )}
       {manageUrl ? (
         <div className="space-y-2">
           <p className={sectionTitle}>{t('result.link')}</p>

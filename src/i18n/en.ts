@@ -17,6 +17,7 @@ export const en: Record<Key, string> = {
   'app.menu': 'Menu',
   'app.nav': 'Main',
   'app.footerNav': 'Site links',
+  'app.marqueePause': 'Pause the moving text',
   'app.footerSource': 'Information from their Instagram, reviewed on October 8, 2026.',
 
   'demo.banner': 'Demo: these dates and reservations are not real.',
@@ -40,6 +41,8 @@ export const en: Record<Key, string> = {
   'cal.filter': 'Experience',
   'cal.filterAll': 'All',
   'cal.sessionOn': '1 date on {date}',
+  'cal.jumped': 'No dates are left this month. Showing {month}.',
+  'ticket.tbd': 'To confirm',
   'cal.showMonth': 'See the whole month',
 
   'intro.body': 'Choose a date and reserve for your whole group.',

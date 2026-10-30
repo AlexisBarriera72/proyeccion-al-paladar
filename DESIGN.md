@@ -2,61 +2,81 @@
 
 How the site looks, moves and speaks. The brief is `research/BUILD_PROMPT.md` §0; this file records how it is applied and where it was adapted. Business facts and owner questions are in the [README](README.md).
 
+**The look is "Sala y boleto"**, chosen by the repository's owner on October 30, 2026 (a proposal, not the business's approved brand): a dark cinema band (the sala) for the header, each page's title and the footer, with film grain and Fraunces titles, over warm paper where the calendar, forms and sheets live. It takes its night palette, grain and serif titles from the MelanieCreations site, and its tickets, marquee band and big type from the Party Dips PR site, two other projects in the same account. It replaces the brief's visual rules (light stone palette, Inter only, no texture); every other rule in the brief stands, including one accent family, honest feedback, real photos only and the accessibility rules.
+
 ## Adaptations from the brief
 
 The brief was written for a "Sites" builder. These changes are deliberate; everything else in the brief stands.
 
-| Brief                       | Here                                                                                              | Why                                                                                     |
-| --------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Sites hosting and storage   | One Cloudflare Worker serving the built site, plus D1                                             | The demo runs in the existing Cloudflare account; one deploy serves pages, API and data |
-| Sites authentication        | Cloudflare Access (one-time PIN), verified again inside the Worker; roles in D1                   | No passwords to store; the Worker never trusts the edge alone                           |
-| Framer Motion               | The same library under its current package name, `motion` (`motion/react`)                        | Framer Motion is published as `motion` now                                              |
-| Modo demostración           | Its own Cloudflare environment and database (`env.demo`, `pap-demo`)                              | Demo rows can never reach live data                                                     |
-| shadcn/ui calendar          | A custom month grid for guests; native date and time inputs for staff                             | Sessions are shown as cards in the grid, which a date picker can't do                   |
-| A view for readiness checks | Shared SQL fragments in `worker/rules.ts`                                                         | The checks take parameters (now, party size, own seats) that a view can't               |
-| A memory store for tests    | The same SQL run on Node's built-in SQLite through a small D1-shaped adapter (`tests/unit/d1.ts`) | Tests prove the real statements instead of a second implementation                      |
+| Brief                       | Here                                                                                              | Why                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Sites hosting and storage   | One Cloudflare Worker serving the built site, plus D1                                             | The demo runs in the existing Cloudflare account; one deploy serves pages, API and data      |
+| Sites authentication        | Cloudflare Access (one-time PIN), verified again inside the Worker; roles in D1                   | No passwords to store; the Worker never trusts the edge alone                                |
+| Framer Motion               | The same library under its current package name, `motion` (`motion/react`)                        | Framer Motion is published as `motion` now                                                   |
+| Modo demostración           | Its own Cloudflare environment and database (`env.demo`, `pap-demo`)                              | Demo rows can never reach live data                                                          |
+| shadcn/ui calendar          | A custom month grid for guests; native date and time inputs for staff                             | Sessions are shown as cards in the grid, which a date picker can't do                        |
+| A view for readiness checks | Shared SQL fragments in `worker/rules.ts`                                                         | The checks take parameters (now, party size, own seats) that a view can't                    |
+| A memory store for tests    | The same SQL run on Node's built-in SQLite through a small D1-shaped adapter (`tests/unit/d1.ts`) | Tests prove the real statements instead of a second implementation                           |
+| Light stone palette, Inter  | "Sala y boleto": a dark band over warm paper, Fraunces titles over Inter text, still film grain   | The repository's owner chose it on October 30, 2026; the business's photos are dark and warm |
 
 ## Tokens
 
-Defined in `src/styles.css` with Tailwind v4 `@theme`, exactly as the brief gives them. This palette is a proposed interface direction, not the company's brand system.
+Defined in `src/styles.css` with Tailwind v4 `@theme`. This palette is a proposed interface direction, not the company's brand system.
 
-| Token                  | Value     | Use                                                    |
-| ---------------------- | --------- | ------------------------------------------------------ |
-| `--color-canvas`       | `#fafaf9` | Page background (light stone)                          |
-| `--color-surface`      | `#ffffff` | Panels                                                 |
-| `--color-ink`          | `#1c1917` | Text                                                   |
-| `--color-muted`        | `#57534e` | Helper text                                            |
-| `--color-border`       | `#d6d3d1` | Decorative panel borders (never the only input border) |
-| `--color-accent`       | `#b45309` | The one accent: primary actions, selection, focus      |
-| `--color-accent-hover` | `#92400e` | Primary action hover                                   |
+| Token                   | Value     | Use                                                                                  |
+| ----------------------- | --------- | ------------------------------------------------------------------------------------ |
+| `--color-canvas`        | `#f8f2e9` | Paper: the page under the band                                                       |
+| `--color-surface`       | `#fffcf7` | Panels, sheets and dialogs                                                           |
+| `--color-ink`           | `#1c1612` | Text on paper                                                                        |
+| `--color-muted`         | `#5b5047` | Helper text on paper                                                                 |
+| `--color-border`        | `#dccfbf` | Decorative panel borders and perforations (never the only input border)              |
+| `--color-accent`        | `#b45309` | The one accent on paper: primary actions, selection, focus, stub dates               |
+| `--color-accent-hover`  | `#92400e` | Primary action hover                                                                 |
+| `--color-wash`          | `#fcf4e6` | Insets, tickets inside a panel, calendar chips                                       |
+| `--color-wash-strong`   | `#f7e6c6` | A calendar chip on hover                                                             |
+| `--color-ticket`        | `#fbf6ee` | A ticket on the dark band                                                            |
+| `--color-sala`          | `#17110d` | The dark band: header, page band, footer, the dialog overlay (60%)                   |
+| `--color-sala-raised`   | `#231a14` | Hover on the band                                                                    |
+| `--color-sala-line`     | `#3e3128` | Hairlines on the band                                                                |
+| `--color-on-sala`       | `#f4ebdf` | Ivory text on the band; the selected staff section                                   |
+| `--color-on-sala-muted` | `#c4b29f` | Secondary text on the band                                                           |
+| `--color-brass`         | `#e2a13f` | The accent on the band: the current link, focus, the demo banner, the marquee's mark |
+| `--color-brass-hover`   | `#f0b65a` | Brass hover                                                                          |
 
-- **One accent family: amber.** No red, green or blue state colors. Warnings, destructive actions, sold out and confirmed are told apart by text, icon and shape, on neutral contrast.
-- **Inputs** use a `stone-500` border (at least 3:1 against white). `tests/unit/contrast.test.ts` checks every pair.
-- **Font:** Inter, self-hosted (`public/fonts/inter/`, OFL), falling back to `"Segoe UI", Arial, sans-serif`.
-- **Radius:** panels and actions `rounded-2xl`; calendar cells and dividers stay square.
-- **Shadow:** only the brief's panel shadow. No glows, blur or gradients.
+- **One accent family: amber, with brass as its light on the dark band.** Every saturated color, the warm paper and the band's browns included, sits between hue 15 and 45. No red, green or blue state colors: warnings, destructive actions, sold out and confirmed are told apart by text, icon and shape. `tests/e2e/design.spec.ts` checks the computed colors.
+- **Inputs** use a `stone-500` border (at least 3:1). `tests/unit/contrast.test.ts` checks every text pair (4.5:1) and every border and focus ring (3:1), on paper and on the band.
+- **Fonts:** Fraunces for titles (upright with its optical-size and weight axes; an italic for the motto only) and Inter for everything else, both self-hosted (`public/fonts/`, OFL; `npm run fonts`), falling back to Georgia and `"Segoe UI", Arial, sans-serif`. Figures are lining and tabular wherever dates and numbers line up.
+- **Texture:** only on the band. A still film grain on the header and footer; the page band adds one soft amber glow behind its title row, centered low so it never meets the header's edge. Elements with texture carry `data-texture`; nothing else draws a background image or a gradient. No blur, glows on controls or colored shadows.
+- **Radius:** panels, tickets and actions `rounded-2xl`; on phones the paper rises over the band with a 28px edge; calendar cells and dividers stay square.
+- **Shadow:** one neutral panel shadow (`rgba(28,25,23,…)`), slightly deeper for dialogs.
 
 ## Type and layout classes
 
-| Element              | Classes                                                                                                                                       |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Page title           | `text-[32px] md:text-[44px] font-medium tracking-[-0.04em] leading-[1.08] text-ink`                                                           |
-| Session/detail title | `text-[24px] font-medium tracking-[-0.025em] leading-[1.2] text-ink`                                                                          |
-| Heading in a panel   | `text-base font-semibold leading-6 text-ink` (`sectionTitle`), so panel headings never compete with the page title                            |
-| Body / helper        | `text-base leading-6 text-ink` / `text-sm leading-5 text-muted`                                                                               |
-| Dates and times      | `tabular-nums tracking-[-0.01em]`                                                                                                             |
-| Customer workspace   | `grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8`                                                                          |
-| Main panel           | `rounded-2xl border border-border/50 bg-surface shadow-[0_1px_2px_rgba(28,25,23,0.04),0_8px_24px_rgba(28,25,23,0.06)]` plus `p-4 sm:p-6`      |
-| Grouped facts        | `rounded-2xl bg-stone-100 p-4` (`inset`), the third surface level inside a panel                                                              |
-| Flush list           | `divide-y divide-border/70` (`rows`): rows divided by hairlines, never a card inside a card                                                   |
-| Primary action       | `min-h-11 rounded-2xl bg-accent px-4 py-3 text-sm font-medium leading-5 text-white hover:bg-accent-hover` + focus outline                     |
-| Secondary action     | `min-h-11 rounded-2xl border border-stone-400 bg-surface px-4 py-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100` + focus outline |
+| Element               | Classes                                                                                                                                       |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page title (band)     | `font-display text-[40px] md:text-[64px] font-medium tracking-[-0.02em] leading-[1.04]` (`pageTitle`), ivory on the band                      |
+| A session's own page  | `font-display text-[32px] md:text-[48px] font-medium tracking-[-0.015em] leading-[1.1]` (`sessionTitle`), for long titles                     |
+| Staff page title      | `font-display text-[32px] md:text-[40px] font-medium tracking-[-0.015em] leading-[1.1] text-ink` (`workTitle`), on paper                      |
+| Panel and sheet title | `font-display text-[28px] font-medium tracking-[-0.01em] leading-[1.15] text-ink` (`detailTitle`)                                             |
+| Heading in a panel    | `text-base font-semibold leading-6 text-ink` (`sectionTitle`), so panel headings never compete with the panel's title                         |
+| Kicker                | `text-xs font-semibold uppercase leading-4 tracking-[0.14em]` (`kicker`): "Próxima fecha", a stub's weekday and month                         |
+| Motto                 | `font-display text-[24px] italic leading-[1.25] md:text-[28px]` (`motto`), with "Su frase en Instagram." under it                             |
+| Body / helper         | `text-base leading-6 text-ink` / `text-sm leading-5 text-muted`                                                                               |
+| Dates and times       | `tabular-nums lining-nums tracking-[-0.01em]`                                                                                                 |
+| Customer workspace    | `grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8`                                                                          |
+| Main panel            | `rounded-2xl border border-border/70 bg-surface shadow-[0_1px_2px_rgba(28,25,23,0.05),0_12px_32px_rgba(28,25,23,0.08)]` plus `p-4 sm:p-6`     |
+| Grouped facts         | `rounded-2xl bg-wash p-4` (`inset`), the third surface level inside a panel                                                                   |
+| Flush list            | `divide-y divide-border/70` (`rows`): rows divided by hairlines, never a card inside a card                                                   |
+| Primary action        | `min-h-11 rounded-2xl bg-accent px-4 py-3 text-sm font-medium leading-5 text-white hover:bg-accent-hover` + focus outline                     |
+| Secondary action      | `min-h-11 rounded-2xl border border-stone-400 bg-surface px-4 py-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100` + focus outline |
+| On the band           | `onSala` (ivory text, raised hover) and `brass` (brass fill, sala text), with a brass focus outline                                           |
 
 These live in `src/components/ui/` and `src/lib/styles.ts` so pages don't repeat them.
 
-- **Layout:** one 1280px container for the demo band, header, main and footer. Single-column pages (terms, the guest's page, a session on a phone) are left-aligned, not centered.
-- **Surfaces:** three levels only: the canvas, a panel, and the stone-100 inset. Sections inside a panel are divided by a hairline, not boxed again.
-- **Date stub:** a 56px column with the weekday, the day number (tabular) and the month, beside the text it dates (`src/components/DateStub.tsx`), with no border or fill so it never looks tappable. It is hidden from screen readers, because the full date is in the text or the heading next to it. Below 22rem it lies flat on one line.
+- **Layout:** one 1280px container inside the full-width band, header, sheet and footer. Single-column pages (terms, the guest's page, a session on a phone) are left-aligned, not centered.
+- **The band and the sheet** (`src/components/Band.tsx`): each guest page opens with its band (the title, and on the calendar their phrase), then the paper sheet. From 640px the sheet's first panels overlap the band's last 64px, like a ticket on a table; on phones the paper rises over the band with a rounded edge. The band is a plain block, not a landmark; the sections below carry the names.
+- **Surfaces:** three levels on paper: the canvas, a panel, and the wash inset. Sections inside a panel are divided by a hairline, not boxed again.
+- **Tickets** (`src/components/Ticket.tsx`): a stub with the date (weekday, a large Fraunces day number, the month; hidden from screen readers, since the full date is in the text or a heading) and a body, divided by a dashed perforation with two notches. The notches are a mask on an inner element, so the band shows through and a focus ring is never cut. Below 16rem (200% zoom on a phone) the stub lies flat above the body, with no notches. Used for the next date, every agenda row and a confirmed reservation; a request or a reservation waiting for payment never gets one.
 - **Facts** (Cuándo, Dónde, Precio, Grupo) are rows divided by hairlines, each label with its Lucide icon (CalendarDays, MapPin, Tag, Users). "Cuándo" stays the first fact, with "(hora de Puerto Rico)" in it.
 
 ## Statuses
@@ -83,13 +103,14 @@ Guest pages build these with `src/components/ui/disclosure.tsx` (a button with `
 
 ## The first screen
 
-- **Computers:** a month grid with session cards on the left; a 360px panel on the right. The panel shows the selected session, or, when nothing is selected, the "Próxima fecha" card (with "Ver detalles") first, as a fixed-height inset, then the A18 photo (120px) beside their motto, its caption, and their wording, all above the fold. While the dates load, the card's place is kept at the same height, so nothing shifts. The panel is sticky without a scrollbar of its own.
-- **Phones:** the agenda (a dated list) first, with a month picker and a switch to the grid. The calendar sits on the page, not inside a panel; each day's cards sit beside a date stub, and every card puts the status and the price on lines of their own.
-- **Header:** the logo and name, then the links. On phones the links wait behind "Menú" (its word is read but not shown below 23rem); from 768px they are inline, with "Calendario" first and marked current on the calendar and its sessions.
-- **Footer:** the business name, the source line and a labeled nav (Calendario, Condiciones, Instagram). It sits at the bottom of short pages.
-- Before scrolling, at 390×844 and 360×640: the business name, the "Calendario" heading, the month controls, and the first session with its action (or the empty state).
+- **The band:** "Calendario" in Fraunces, and from 640px their phrase "Cine. Sabores. Emociones." in Fraunces italic with "Su frase en Instagram." On phones the band holds the title alone, so the agenda stays in the first screen; the phrase follows the agenda, with the photo.
+- **Computers:** a month grid with session chips on the left; a 360px panel on the right. The panel shows the selected session, or, when nothing is selected, the "Próxima fecha" ticket (with "Ver detalles") first, at a fixed height, then the A18 photo cropped to 4:3 with its caption, and how to choose. While the dates load, the ticket's place is kept at the same height, so nothing shifts. The panel is sticky without a scrollbar of its own.
+- **Phones:** the agenda (a dated list of tickets) first, with a month picker and a switch to the grid. Each ticket puts the time and the status on one line, then the title, then the price, so every ticket has the same shape.
+- **Header:** the logo on an ivory disc and the name in Fraunces, then the links. On phones the links wait behind "Menú" (its word is read but not shown below 26rem, so the name keeps to one line) and open as large Fraunces words; from 768px they are an inline row, the current one underlined in brass.
+- **Footer:** their phrase moving slowly as a marquee, then the business name, the source line and a labeled nav (Calendario, Condiciones, Instagram). It sits at the bottom of short pages.
+- Before scrolling, at 1440×900, 390×844 and 360×640: the business name, the "Calendario" heading, the month controls, and the first session with its action (or the empty state). Grid rows are 96px, so a session in the month's fifth week still fits on computers.
 - Empty state when nothing is published: "Aún no hay fechas publicadas. Consulta las próximas experiencias en Instagram." with a link to the official profile only.
-- **The demo banner is there from the first paint.** In the demo the Worker marks the page's HTML (`<html data-demo="1">`), so the banner never arrives after the dates and pushes the page down.
+- **The demo banner is there from the first paint,** in brass with dark text. In the demo the Worker marks the page's HTML (`<html data-demo="1">`), so the banner never arrives after the dates and pushes the page down.
 
 ## Calendar controls
 
@@ -100,15 +121,17 @@ Guest pages build these with `src/components/ui/disclosure.tsx` (a button with `
 - **Phones open on Lista,** the agenda. Their Calendario view is a compact month: days with sessions are buttons, and choosing one filters the agenda below. "Ver todo el mes" clears the choice. A session opens on its own page.
 - **Computers:** the same controls on one row, with the filter (12rem) at its end. The filter appears after the dates load, and because the row has room for it, it doesn't push the calendar down; `tests/e2e/design.spec.ts` holds layout shift to 0.02 or less.
 - "Mes anterior" is off on the current month. The month name is announced politely when it changes.
+- **At the end of a month:** when no date is left this month, the calendar opens on the next date's month, once, and the line under the controls says "No quedan fechas este mes. Te mostramos {mes}." (announced politely). "Hoy" still goes back to this month, which is empty, says so, and offers "Ver próxima fecha". The same line always carries "Horas en hora de Puerto Rico."
 - The chosen view lasts for the browser tab (session storage), and nothing depends on it.
 
 ## Staff workspace
 
 - `/equipo/` is its own chunk, loaded only there, with the same tokens, type and actions as the guest pages. It reads as a quiet work ledger: the main task leads each page, and rare or destructive actions wait behind a button.
-- **Header, computers (1024px and wider):** "Proyección al Paladar · Equipo", then "Ver el sitio", the language and an account menu (the role, with the signed-in email inside). Below it, the nine sections in three groups divided by rules: Calendario, Esta noche, Sesiones, Reservaciones | Excepciones, Pedidos | Experiencias, Configuración, Historial. The current one is filled with ink. Excepciones and Pedidos show an outline count only when something is waiting, from the existing staff endpoints.
-- **Header, below 1024px:** one row with the name over "Equipo · Dueño" (or "Equipo"), and "Secciones". It opens a sheet (from the bottom on phones, from the right from 640px) with the same three groups, the counts, the account, "Ver el sitio" and the language. When cases wait, the button shows an ink dot and says so to screen readers ("Hay casos por atender.").
-- **Demo band:** in the demo, a dark band at the top says "Demostración: datos de prueba. Nada aquí es real."
-- **Panel headings** use body size (`sectionTitle`), a density adaptation for staff, so they never compete with the page title. The 24px detail title stays for dialog and sheet titles.
+- **The calm version of the look:** the header is the dark band (grain, no glow); page titles are Fraunces at 32/40px (`workTitle`); lists, forms and tables stay on quiet paper, so daily work stays fast to scan.
+- **Header, computers (1024px and wider):** "Proyección al Paladar · Equipo" in Fraunces, then "Ver el sitio", the language and an account menu (the role, with the signed-in email inside), all in ivory. Below it, the nine sections in three groups divided by rules: Calendario, Esta noche, Sesiones, Reservaciones | Excepciones, Pedidos | Experiencias, Configuración, Historial. The current one is an ivory pill with dark text. Excepciones and Pedidos show an outline count only when something is waiting, from the existing staff endpoints.
+- **Header, below 1024px:** one row with the name over "Equipo · Dueño" (or "Equipo"), and "Secciones". It opens a sheet (from the bottom on phones, from the right from 640px) with the same three groups, the counts, the account, "Ver el sitio" and the language. When cases wait, the button shows a brass dot and says so to screen readers ("Hay casos por atender.").
+- **Demo band:** in the demo, a brass band at the top says "Demostración: datos de prueba. Nada aquí es real."
+- **Panel headings** use body size (`sectionTitle`), a density adaptation for staff, so they never compete with the page title. Dialog and sheet titles use the 28px Fraunces title.
 - **Lists** are flush rows divided by hairlines inside one panel, with column headers on computers and two-line rows on phones. Rows change color on hover; nothing moves. Count chips and nav counts of zero are hidden; panel headings and filters show their count, zero included ("Por resolver (0)").
 - **Statuses** (`StatusPill`): a 14px icon and a word, with shape for urgency. Needs action, solid ink: Pendiente de pago, En revisión del equipo (an exception). Normal, an outline: Borrador, Publicada, Solicitud recibida, Confirmada, Completada. Ended, a muted outline: Cancelada, Archivada, No asistió. Configuración and a reservation's side column use the same pills: a place's approval, the terms' states, a member's role and access, a proposal's state and a handled request. The DEMO tag is dashed, with no icon. In lists it sits beside the title or name; on a record's page it comes first in the meta row. On the month grid, a chip names its state only when the session isn't simply published, as the guest grid does.
 - **Seats** read "8 de 24 plazas", with a 4px ink-on-stone track that never animates.
@@ -144,6 +167,8 @@ Guest pages build these with `src/components/ui/disclosure.tsx` (a button with `
 - Magnetic pull: only the main CTA, only on a fine pointer with hover, at most 3px, springing back on exit. Never on touch, inputs, cells, destructive actions or staff tables.
 - `useReducedMotion()` removes translation, scaling, magnetism and stagger delays. Content renders at once; focus, color and status feedback stay.
 - Motion never gates completion, hides an error or shifts layout.
+- **The marquee** (the footer's band of their phrase) drifts slowly (60 seconds a cycle). It is decoration, hidden from screen readers; it stops while hovered, has a pause button with `aria-pressed` (WCAG 2.2.2), and under reduced motion it stands still and the button is gone.
+- **Popcorn** bursts once, for about 1.5 seconds, only when the server has just confirmed a reservation: never for a request, a reservation waiting for payment, a copied message or a reopened receipt, and never under reduced motion. It is hidden from screen readers and takes no clicks.
 
 ## Feedback wording
 
@@ -186,14 +211,14 @@ The site says only what happened.
 
 ## Photos
 
-| Slot         | Source          | Served as                                    | Shows                                                                                   | Caption                                                                          |
-| ------------ | --------------- | -------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `room`       | A18 (1200×1600) | The whole frame, 3:4                         | An earlier event room; people; projected film                                           | "Evento anterior. Fuente: @proyeccionalpaladarpr. Permiso de uso por confirmar." |
-| `table-food` | A27 (1440×1920) | 4:3, from the bottom of the frame, 1440×1080 | Table, food and balloons. The crop leaves out the projected film and the screen's brand | same                                                                             |
-| `food`       | A25 (640×1136)  | 4:3, 640×480                                 | Food at a screening                                                                     | same                                                                             |
-| `logo`       | A01 (150×150)   | The whole frame                              | Their logo                                                                              | none; shown at 72 CSS px or less                                                 |
+| Slot         | Source          | Served as                                     | Shows                                                                                   | Caption                                                                          |
+| ------------ | --------------- | --------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `room`       | A18 (1200×1600) | The whole file, shown cropped to 4:3 (center) | An earlier event room; people; projected film                                           | "Evento anterior. Fuente: @proyeccionalpaladarpr. Permiso de uso por confirmar." |
+| `table-food` | A27 (1440×1920) | 4:3, from the bottom of the frame, 1440×1080  | Table, food and balloons. The crop leaves out the projected film and the screen's brand | same                                                                             |
+| `food`       | A25 (640×1136)  | 4:3, 640×480                                  | Food at a screening                                                                     | same                                                                             |
+| `logo`       | A01 (150×150)   | The whole frame                               | Their logo                                                                              | none; shown at 72 CSS px or less                                                 |
 
-- **Where they appear.** `room` leads the introduction: the side panel on computers, below the calendar on phones. `table-food` and `food` appear in the session details of the experiences that use them (the panel or the session's page). Staff choose an experience's photo in Experiencias; the demo gives `table-food` to Ratatouille and `food` to Shrek.
+- **Where they appear.** `room` leads the introduction: the side panel on computers, below the agenda on phones. `table-food` and `food` appear in the session details of the experiences that use them (the panel or the session's page). Staff choose an experience's photo in Experiencias; the demo gives `table-food` to Ratatouille and `food` to Shrek.
 - **How they are made.** `npm run photos` (`scripts/photos.mjs`) sets each slot's crop shape and vertical focus. `table-food` uses focus 1, the bottom edge. It writes `src/photos.ts`, which records for each photo its source, whether people or film content are visible (`table-food`: `filmVisible: false`), and `reuse: 'not_verified'`.
 - Room photos never stand in for the current Aguada venue.
 - Permission is unverified for every use, the pitch included. `npm run launch-check` blocks a public launch while any served photo lacks approval.

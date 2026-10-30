@@ -1,5 +1,5 @@
-// Actions, with the brief's classes. Motion: a 0.98 press on enabled buttons (none under
-// reduced motion); hover is a background shift. Hit areas never move.
+// Actions. Motion: a 0.98 press on enabled buttons (none under reduced motion); hover is a
+// background shift. Hit areas never move. Amber on paper; brass and ivory on the dark band.
 import {forwardRef, type ButtonHTMLAttributes} from 'react';
 import {motion} from 'motion/react';
 import {cva, type VariantProps} from 'class-variance-authority';
@@ -21,6 +21,9 @@ const variants = cva(
         quiet: 'border border-stone-500 bg-surface text-ink hover:bg-stone-100',
         ghost: 'text-ink hover:bg-stone-100',
         link: 'min-h-0 px-0 py-0 text-accent underline underline-offset-4 hover:text-accent-hover',
+        // On the dark band: a quiet ivory action, and brass for the main one.
+        onSala: 'text-on-sala hover:bg-sala-raised focus-visible:outline-brass',
+        brass: 'bg-brass text-sala hover:bg-brass-hover focus-visible:outline-brass',
       },
       width: {auto: '', full: 'w-full'},
     },

@@ -9,14 +9,15 @@ import {useConfig} from '../lib/config.tsx';
 import {pick} from '../lib/format.ts';
 import {Link} from '../lib/router.tsx';
 import {copyText} from '../lib/copy.ts';
-import {useMagnetic} from '../lib/motion.ts';
-import {detailTitle, helper, numbers, pageTitle, sectionTitle} from '../lib/styles.ts';
+import {useEntry, useMagnetic} from '../lib/motion.ts';
+import {detailTitle, helper, numbers, sectionTitle, sessionTitle} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
 import {AvailabilityBadge} from '../components/Status.tsx';
 import {Price} from '../components/Price.tsx';
 import {Photo} from '../components/Photo.tsx';
 import {Disclosure} from '../components/ui/disclosure.tsx';
+import {PageBand, PageSheet} from '../components/Band.tsx';
 
 const fact = 'space-y-0.5 py-3';
 const factLabel = 'flex items-center gap-2 text-sm leading-5 text-muted [&_svg]:size-4 [&_svg]:shrink-0';
@@ -112,6 +113,7 @@ export function SessionDetail({
   const [flowUsed, setFlowUsed] = useState(false);
   const [shared, setShared] = useState<string | null>(null);
   const magnetic = useMagnetic(3);
+  const entry = useEntry();
   const Heading = variant === 'page' ? 'h1' : 'h2';
   // One level below the title: h2 under the page's h1, h3 under the panel's h2.
   const Sub = variant === 'page' ? 'h2' : 'h3';
@@ -122,37 +124,39 @@ export function SessionDetail({
     setShared(ok ? t('detail.linkCopied') : t('result.copyFailed'));
   };
 
-  return (
-    <article className="space-y-5" aria-labelledby={`session-${session.id}`}>
-      {variant === 'page' ? (
-        <Link to="/" className={cn(buttonVariants({variant: 'ghost'}), '-ml-3')}>
-          <ArrowLeft aria-hidden="true" />
-          {t('detail.back')}
-        </Link>
-      ) : null}
-      <div className="space-y-3">
-        <Heading
-          id={`session-${session.id}`}
-          tabIndex={-1}
-          data-focus
-          className={cn(
-            variant === 'page' ? pageTitle : detailTitle,
-            'focus:outline-none',
-            session.availability === 'cancelled' && 'line-through',
-          )}
-        >
-          {pick(session.title, lang)}
-        </Heading>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <AvailabilityBadge availability={session.availability} />
-          {session.remaining !== null && session.availability !== 'sold_out' && session.availability !== 'past' ? (
-            <span className={cn('text-sm leading-5 text-ink', numbers)}>
-              {session.remaining === 1 ? t('status.remainingOne') : t('status.remaining', {count: session.remaining})}
-            </span>
-          ) : null}
-        </div>
+  const page = variant === 'page';
+  const remaining =
+    session.remaining !== null && session.availability !== 'sold_out' && session.availability !== 'past'
+      ? session.remaining === 1
+        ? t('status.remainingOne')
+        : t('status.remaining', {count: session.remaining})
+      : null;
+  // The title and status: in the band on a page of its own, at the top of the panel otherwise.
+  const header = (
+    <div className="space-y-3">
+      <Heading
+        id={`session-${session.id}`}
+        tabIndex={-1}
+        data-focus
+        className={cn(
+          page ? cn(sessionTitle, 'text-on-sala') : detailTitle,
+          'focus:outline-none',
+          session.availability === 'cancelled' && 'line-through',
+        )}
+      >
+        {pick(session.title, lang)}
+      </Heading>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <AvailabilityBadge availability={session.availability} tone={page ? 'sala' : 'paper'} />
+        {remaining ? (
+          <span className={cn('text-sm leading-5', page ? 'text-on-sala' : 'text-ink', numbers)}>{remaining}</span>
+        ) : null}
       </div>
+    </div>
+  );
 
+  const body = (
+    <>
       <dl className="divide-y divide-border/70 border-y border-border/70 text-base leading-6">
         <div className={fact}>
           <dt className={factLabel}>
@@ -288,6 +292,36 @@ export function SessionDetail({
           <ReserveFlow session={session} open={flowOpen} onOpenChange={setFlowOpen} onSessionChanged={onChanged} />
         </Suspense>
       ) : null}
+    </>
+  );
+
+  if (!page) {
+    return (
+      <article className="space-y-5" aria-labelledby={`session-${session.id}`}>
+        {header}
+        {body}
+      </article>
+    );
+  }
+  return (
+    <article aria-labelledby={`session-${session.id}`}>
+      <PageBand>
+        <motion.div variants={entry.item} className="space-y-4">
+          <Link to="/" className={cn(buttonVariants({variant: 'onSala'}), '-ml-3')}>
+            <ArrowLeft aria-hidden="true" />
+            {t('detail.back')}
+          </Link>
+          {header}
+        </motion.div>
+      </PageBand>
+      <PageSheet>
+        <motion.div
+          variants={entry.item}
+          className="max-w-2xl space-y-5 sm:rounded-2xl sm:border sm:border-border/70 sm:bg-surface sm:p-6 sm:shadow-[0_1px_2px_rgba(28,25,23,0.05),0_12px_32px_rgba(28,25,23,0.08)]"
+        >
+          {body}
+        </motion.div>
+      </PageSheet>
     </article>
   );
 }

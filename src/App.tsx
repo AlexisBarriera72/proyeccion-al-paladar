@@ -38,8 +38,9 @@ function StaffLoading() {
 
 function PageLoading() {
   const {t} = useT();
+  // The band's place, so the page that loads lands where this was.
   return (
-    <div aria-busy="true" className="mx-auto h-64 max-w-2xl rounded-2xl bg-stone-100">
+    <div aria-busy="true" className="h-40 bg-sala sm:h-56">
       <p className="sr-only">{t('app.loading')}</p>
     </div>
   );

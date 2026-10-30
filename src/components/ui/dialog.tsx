@@ -57,7 +57,7 @@ export function Dialog({
           <D.Portal forceMount>
             <D.Overlay asChild forceMount>
               <motion.div
-                className="fixed inset-0 z-40 bg-ink/40"
+                className="fixed inset-0 z-40 bg-sala/60"
                 initial={{opacity: 0}}
                 animate={{opacity: 1}}
                 exit={{opacity: 0}}
@@ -82,7 +82,7 @@ export function Dialog({
                 transition={reduce ? {duration: 0} : SPRING}
                 className={cn(
                   'fixed z-50 flex max-h-[92dvh] w-auto flex-col overflow-hidden sm:w-full rounded-2xl border border-border/50 bg-surface',
-                  'shadow-[0_1px_2px_rgba(28,25,23,0.04),0_8px_24px_rgba(28,25,23,0.06)] focus:outline-none',
+                  'shadow-[0_1px_2px_rgba(28,25,23,0.05),0_12px_32px_rgba(28,25,23,0.12)] focus:outline-none',
                   sheet
                     ? cn(
                         'inset-x-0 bottom-0 rounded-b-none sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:rounded-none sm:rounded-l-2xl',
@@ -94,7 +94,7 @@ export function Dialog({
               >
                 <div className="flex items-start justify-between gap-4 border-b border-border/70 p-4 sm:p-6">
                   <div className="min-w-0 space-y-1">
-                    <D.Title className="text-[24px] font-medium leading-[1.2] tracking-[-0.025em] text-ink">
+                    <D.Title className="font-display text-[28px] font-medium leading-[1.15] tracking-[-0.01em] text-ink">
                       {title}
                     </D.Title>
                     {description ? (

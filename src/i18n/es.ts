@@ -16,6 +16,7 @@ export const es = {
   'app.menu': 'Menú',
   'app.nav': 'Principal',
   'app.footerNav': 'Enlaces del sitio',
+  'app.marqueePause': 'Pausar el texto en movimiento',
   'app.footerSource': 'Información de su Instagram, revisada el 8 de octubre de 2026.',
 
   'demo.banner': 'Demostración: estas fechas y reservaciones no son reales.',
@@ -39,6 +40,8 @@ export const es = {
   'cal.filter': 'Experiencia',
   'cal.filterAll': 'Todas',
   'cal.sessionOn': '1 fecha el {date}',
+  'cal.jumped': 'No quedan fechas este mes. Te mostramos {month}.',
+  'ticket.tbd': 'Por confirmar',
   'cal.showMonth': 'Ver todo el mes',
 
   'intro.body': 'Escoge una fecha y reserva para todo tu grupo.',

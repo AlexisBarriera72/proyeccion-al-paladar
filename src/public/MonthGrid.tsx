@@ -1,6 +1,7 @@
-// The month grid (computers): a table with a caption, weekday headers and session cards in
-// each day. Cards are buttons reachable with Tab. Cells never move; only the selection
-// indicator glides between cards (a spring; none under reduced motion).
+// The month grid (computers): a table with a caption, weekday headers and session chips in
+// each day: a pale amber card with an amber edge, like a ticket's stub. Chips are buttons
+// reachable with Tab. Cells never move; only the selection indicator glides between chips (a
+// spring; none under reduced motion).
 import {motion} from 'motion/react';
 import {Ban, CircleX, History, Hourglass} from 'lucide-react';
 import type {PublicSession} from '../../shared/types.ts';
@@ -47,7 +48,11 @@ export function MonthGrid({
       <thead>
         <tr>
           {weekdays.map(day => (
-            <th key={day} scope="col" className="pb-2 text-left text-sm font-medium leading-5 text-muted">
+            <th
+              key={day}
+              scope="col"
+              className="pb-2 text-left text-xs font-semibold uppercase leading-4 tracking-[0.12em] text-muted"
+            >
               {day}
             </th>
           ))}
@@ -57,12 +62,12 @@ export function MonthGrid({
         {weeks.map((week, w) => (
           <tr key={w}>
             {week.map((day, d) => {
-              if (day === null) return <td key={d} className="h-28 border border-border/60 bg-canvas" />;
+              if (day === null) return <td key={d} className="h-24 border border-border/60 bg-canvas" />;
               const key = keyOf(day);
               const list = byDay.get(key) ?? [];
               const today = key === todayKey;
               return (
-                <td key={d} className="h-28 border border-border/60 p-1.5 align-top">
+                <td key={d} className="h-24 border border-border/60 p-1.5 align-top">
                   <div className="flex items-center justify-between">
                     <span
                       className={cn(
@@ -88,10 +93,11 @@ export function MonthGrid({
                             aria-label={label}
                             aria-pressed={selected}
                             className={cn(
-                              'relative block w-full rounded-lg border px-1.5 py-1 text-left text-[13px] leading-4 hover:bg-stone-100',
+                              'relative block w-full rounded-md border-l-[3px] px-1.5 py-1 text-left text-[13px] leading-4 text-ink',
                               'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-                              selected ? 'border-transparent' : 'border-stone-300',
-                              (session.availability === 'past' || session.availability === 'cancelled') && 'text-muted',
+                              session.availability === 'past' || session.availability === 'cancelled'
+                                ? 'border-stone-400 bg-stone-100 text-muted hover:bg-stone-200'
+                                : 'border-accent bg-wash hover:bg-wash-strong',
                             )}
                           >
                             {selected ? (
@@ -99,7 +105,7 @@ export function MonthGrid({
                                 layoutId="selected-session"
                                 transition={SPRING}
                                 aria-hidden="true"
-                                className="absolute inset-0 rounded-lg border-2 border-accent"
+                                className="absolute inset-0 rounded-md border-2 border-accent"
                               />
                             ) : null}
                             <span className={cn('flex items-center gap-1 font-semibold', numbers)}>
@@ -107,10 +113,7 @@ export function MonthGrid({
                               {Mark ? <Mark className="size-3.5 shrink-0" aria-hidden="true" /> : null}
                             </span>
                             <span
-                              className={cn(
-                                list.length === 1 ? 'line-clamp-3' : 'line-clamp-2',
-                                session.availability === 'cancelled' && 'line-through',
-                              )}
+                              className={cn('line-clamp-2', session.availability === 'cancelled' && 'line-through')}
                             >
                               {pick(session.title, lang)}
                             </span>

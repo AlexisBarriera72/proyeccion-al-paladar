@@ -1,7 +1,9 @@
-// The calendar: "/" and "/funciones/:id/". Computers: the month grid (or the list) with a 360px
-// panel for the selected session, or a short introduction. Phones: the agenda first; a session
-// opens on its own page. Loading keeps its size; errors offer a retry; empty states say so.
-import {useEffect, useMemo, useState, type ReactNode} from 'react';
+// The calendar: "/" and "/funciones/:id/". The dark band holds the title and their phrase; on
+// paper below, computers get the month grid (or the list) with a 360px panel for the selected
+// session or the next date, and phones get the agenda first, while a session opens on its own
+// page. When no date is left this month, it opens on the next date's month and says so.
+// Loading keeps its size; errors offer a retry; empty states say so.
+import {useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
 import {motion} from 'motion/react';
 import {CalendarDays, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, List, RotateCw} from 'lucide-react';
 import type {PublicSession} from '../../shared/types.ts';
@@ -22,13 +24,14 @@ import {useEntry} from '../lib/motion.ts';
 import {navigate, Link} from '../lib/router.tsx';
 import {readJson, writeJson} from '../lib/storage.ts';
 import {pick} from '../lib/format.ts';
-import {detailTitle, helper, inset, numbers, pageTitle, panel, workspace} from '../lib/styles.ts';
+import {detailTitle, helper, inset, kicker, motto, numbers, pageTitle, panel, workspace} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
 import {Switch} from '../components/ui/tabs.tsx';
 import {Photo} from '../components/Photo.tsx';
 import {AvailabilityBadge} from '../components/Status.tsx';
-import {DateStub} from '../components/DateStub.tsx';
+import {Ticket, TicketDate} from '../components/Ticket.tsx';
+import {PageBand, PageSheet} from '../components/Band.tsx';
 import {MonthGrid} from './MonthGrid.tsx';
 import {Agenda} from './Agenda.tsx';
 import {SessionDetail} from './SessionDetail.tsx';
@@ -101,50 +104,70 @@ function DetailState({
   onChanged: () => void;
 }) {
   const {t} = useT();
+  const entry = useEntry();
   if (selected.state === 'ready')
     return <SessionDetail session={selected.session} variant={variant} onChanged={onChanged} />;
+  if (selected.state === 'none') return null;
+
+  let body: ReactNode;
   if (selected.state === 'loading') {
-    return (
+    body = (
       <div aria-busy="true" className="space-y-4">
         <p className="sr-only">{t('app.loading')}</p>
-        <div className="h-8 w-3/4 rounded-xl bg-stone-200" />
-        <div className="h-6 w-1/3 rounded-full bg-stone-200" />
+        {variant === 'panel' ? (
+          <>
+            <div className="h-8 w-3/4 rounded-xl bg-stone-200" />
+            <div className="h-6 w-1/3 rounded-full bg-stone-200" />
+          </>
+        ) : null}
         <div className="h-40 rounded-2xl bg-stone-200" />
         <div className="h-24 rounded-2xl bg-stone-100" />
       </div>
     );
-  }
-  const back =
-    variant === 'page' ? (
-      <Link to="/" className={cn(buttonVariants({variant: 'ghost'}), '-ml-3')}>
-        <ChevronLeft aria-hidden="true" />
-        {t('detail.back')}
-      </Link>
-    ) : null;
-  if (selected.state === 'error') {
-    return (
-      <div className="space-y-4">
-        {back}
-        <Problem message={t('detail.loadError')} onRetry={onRetry} />
-      </div>
-    );
-  }
-  if (selected.state === 'missing') {
-    return (
-      <div className="space-y-4">
-        {back}
-        <h2 data-focus tabIndex={-1} className={cn(detailTitle, 'focus:outline-none')}>
-          {t('detail.notFound')}
-        </h2>
-        {variant === 'panel' ? (
+  } else if (selected.state === 'error') {
+    body = <Problem message={t('detail.loadError')} onRetry={onRetry} />;
+  } else {
+    body =
+      variant === 'panel' ? (
+        <div className="space-y-4">
+          <h2 data-focus tabIndex={-1} className={cn(detailTitle, 'focus:outline-none')}>
+            {t('detail.notFound')}
+          </h2>
           <Link to="/" scroll={false} className={buttonVariants({variant: 'secondary'})}>
             {t('detail.back')}
           </Link>
-        ) : null}
-      </div>
-    );
+        </div>
+      ) : null;
   }
-  return null;
+  if (variant === 'panel') return body;
+
+  // A page of its own (phones): the band with the way back, then the state on paper.
+  return (
+    <>
+      <PageBand>
+        <motion.div variants={entry.item} className="space-y-4">
+          <Link to="/" className={cn(buttonVariants({variant: 'onSala'}), '-ml-3')}>
+            <ChevronLeft aria-hidden="true" />
+            {t('detail.back')}
+          </Link>
+          {selected.state === 'missing' ? (
+            <h1 data-focus tabIndex={-1} className={cn(pageTitle, 'text-on-sala focus:outline-none')}>
+              {t('detail.notFound')}
+            </h1>
+          ) : selected.state === 'loading' ? (
+            <div aria-hidden="true" className="h-10 w-3/4 rounded-xl bg-sala-raised" />
+          ) : null}
+        </motion.div>
+      </PageBand>
+      {body ? (
+        <PageSheet>
+          <motion.div variants={entry.item} className="max-w-2xl">
+            {body}
+          </motion.div>
+        </PageSheet>
+      ) : null}
+    </>
+  );
 }
 
 /** Phones' calendar option: days with sessions are buttons; choosing one filters the agenda. */
@@ -235,65 +258,84 @@ function MiniMonth({
   );
 }
 
-/** The next date: an inset with a fixed height, so the panel doesn't move when it arrives. */
-function NextCard({next, onOpen}: {next: PublicSession; onOpen: (session: PublicSession) => void}) {
+/** The next date, as a ticket. Its height is fixed, so the panel doesn't move when it arrives. */
+function NextTicket({next, onOpen}: {next: PublicSession; onOpen: (session: PublicSession) => void}) {
   const {t, lang} = useT();
   return (
-    <div className={cn(inset, 'flex h-[176px] flex-col justify-between gap-3')}>
-      <div className="flex gap-3">
-        {next.startsAt !== null ? <DateStub ms={next.startsAt} /> : null}
-        <div className="min-w-0 flex-1">
-          <p className={helper}>{t('intro.next')}</p>
-          <p className="line-clamp-2 text-base font-medium leading-6 text-ink">{pick(next.title, lang)}</p>
+    <Ticket
+      tone="wash"
+      stub={<TicketDate ms={next.startsAt} />}
+      className="h-[192px]"
+      bodyClassName="flex flex-col justify-between gap-3"
+    >
+      <div className="min-w-0 space-y-1">
+        <p className={cn(kicker, 'text-accent')}>{t('intro.next')}</p>
+        <p className="line-clamp-2 font-display text-[20px] font-semibold leading-6 text-ink">
+          {pick(next.title, lang)}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {next.startsAt !== null ? (
-            <p className={cn('text-sm leading-5 text-ink', numbers)}>
+            <p className={cn('text-sm font-semibold leading-5 text-ink', numbers)}>
               <span className="sr-only">{formatLongDate(next.startsAt, lang)}, </span>
               {formatTime(next.startsAt, lang)}
             </p>
           ) : null}
+          <AvailabilityBadge availability={next.availability} />
         </div>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <AvailabilityBadge availability={next.availability} />
-        <Button variant="primary" onClick={() => onOpen(next)}>
-          {t('action.view')}
-        </Button>
-      </div>
-    </div>
+      <Button variant="primary" onClick={() => onOpen(next)} className="self-start">
+        {t('action.view')}
+      </Button>
+    </Ticket>
   );
 }
 
-function Intro({
-  next,
-  side,
-  onOpen,
-}: {
-  /** The next date, or 'loading' while the dates load (its place is kept, so nothing shifts). */
-  next: PublicSession | null | 'loading';
-  /** The computers' side panel, where the photo is in the first view. */
-  side: boolean;
-  onOpen: (session: PublicSession) => void;
-}) {
+/** Their phrase, quoted and attributed: in the band on wider screens, under the photo on phones. */
+function Motto({tone}: {tone: 'sala' | 'paper'}) {
   const {t} = useT();
   return (
-    <section aria-labelledby="intro-heading" className="space-y-5">
+    <figure className="space-y-1">
+      {/* Their own words, in Spanish on the English page too. */}
+      <blockquote lang="es" className={cn(motto, tone === 'sala' ? 'text-on-sala' : 'text-ink')}>
+        {t('app.motto')}
+      </blockquote>
+      <figcaption className={tone === 'sala' ? 'text-sm leading-5 text-on-sala-muted' : helper}>
+        {t('intro.quoteSource')}
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * Computers, when no session is chosen: the next date (its place kept while the dates load,
+ * so nothing shifts), then the A18 photo with its caption, and how to choose.
+ */
+function SideIntro({next, onOpen}: {next: PublicSession | null | 'loading'; onOpen: (session: PublicSession) => void}) {
+  const {t} = useT();
+  return (
+    <section aria-label={t('intro.next')} className="space-y-5">
       {next === 'loading' ? (
-        <div aria-hidden="true" className="h-[176px] rounded-2xl bg-stone-100" />
+        <div aria-hidden="true" className="h-[192px] rounded-2xl bg-wash" />
       ) : next ? (
-        <NextCard next={next} onOpen={onOpen} />
+        <NextTicket next={next} onOpen={onOpen} />
       ) : null}
-      <div className="grid grid-cols-[120px_minmax(0,1fr)] items-start gap-4">
-        <Photo slot="room" sizes="120px" priority={side} caption={false} />
-        <div className="space-y-1">
-          <h2 id="intro-heading" className={detailTitle}>
-            {t('app.motto')}
-          </h2>
-          <p className={helper}>{t('intro.quoteSource')}</p>
-        </div>
+      <Photo slot="room" sizes="312px" priority aspect="4 / 3" />
+      <p className={helper}>{t('intro.pick')}</p>
+    </section>
+  );
+}
+
+/** Phones and tablets, after the agenda: the photo, their phrase and their wording. */
+function PhoneIntro() {
+  const {t} = useT();
+  return (
+    <section aria-label={t('app.motto')} className="space-y-4">
+      <Photo slot="room" sizes="(min-width: 640px) 560px, 100vw" aspect="4 / 3" />
+      {/* From 640px the phrase is in the band. */}
+      <div className="sm:hidden">
+        <Motto tone="paper" />
       </div>
-      <p className={helper}>{t('photo.caption')}</p>
       <p className="text-base leading-6 text-ink">{t('intro.body')}</p>
-      {side ? <p className={helper}>{t('intro.pick')}</p> : null}
     </section>
   );
 }
@@ -335,6 +377,24 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, selectedStart]);
 
+  // When no date is left this month, open on the next date's month, once, before the person
+  // moves through the months; the line under the controls says so.
+  const [jumped, setJumped] = useState<Month | null>(null);
+  const settled = useRef(false);
+  useEffect(() => {
+    if (settled.current || !list) return;
+    settled.current = true;
+    if (sessionId) return;
+    const upcoming = list.filter(
+      session => session.startsAt !== null && session.startsAt >= now && session.availability !== 'cancelled',
+    );
+    if (!upcoming.length || upcoming.some(session => inMonth(session.startsAt!, current))) return;
+    const p = prDateParts(upcoming[0].startsAt!);
+    const target = {year: p.year, month: p.month};
+    setMonth(target);
+    setJumped(target);
+  }, [list, sessionId, now, current]);
+
   useEffect(() => {
     document.title =
       selected.state === 'ready'
@@ -361,10 +421,14 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
   const isCurrent = month.year === current.year && month.month === current.month;
 
   const changeMonth = (delta: number) => {
+    settled.current = true;
+    setJumped(null);
     setDay(null);
     setMonth(m => addMonths(m.year, m.month, delta));
   };
   const goToday = () => {
+    settled.current = true;
+    setJumped(null);
     setDay(null);
     setMonth(current);
   };
@@ -378,13 +442,11 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
     refreshSelected();
   };
 
-  // Phones: a session opens on its own page.
+  // Phones: a session opens on its own page, with its own band.
   if (sessionId && !wide) {
     return (
       <motion.div variants={entry.page} initial="hidden" animate="show">
-        <motion.div variants={entry.item} className="max-w-xl">
-          <DetailState selected={selected} variant="page" onRetry={refresh} onChanged={refresh} />
-        </motion.div>
+        <DetailState selected={selected} variant="page" onRetry={refresh} onChanged={refresh} />
       </motion.div>
     );
   }
@@ -393,7 +455,7 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
   // Computers: one row. The filter (only with more than one experience) appears after the
   // dates load, so it sits at the row's end and never pushes the calendar down.
   const controls = (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-y-3">
       <div className="flex w-full items-center justify-between gap-1 sm:w-auto sm:justify-start">
         <Button
           variant="ghost"
@@ -550,13 +612,7 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
         <div aria-busy="true" className="space-y-2">
           <p className="sr-only">{t('app.loading')}</p>
           {[0, 1, 2].map(i => (
-            <div
-              key={i}
-              className="grid grid-cols-1 gap-2 min-[22rem]:grid-cols-[3.5rem_minmax(0,1fr)] min-[22rem]:gap-3"
-            >
-              <div className="h-7 rounded-2xl bg-stone-100 min-[22rem]:h-[83px]" />
-              <div className="h-[104px] rounded-2xl border border-stone-200 bg-stone-100" />
-            </div>
+            <div key={i} className="h-[136px] rounded-2xl border border-border bg-wash" />
           ))}
         </div>
       ) : (
@@ -568,37 +624,56 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
     }
   }
 
+  const jumpedHere = jumped !== null && jumped.year === month.year && jumped.month === month.month;
+
   return (
-    <motion.div variants={entry.page} initial="hidden" animate="show" className="space-y-4">
-      <motion.div variants={entry.item} className="space-y-1">
-        <h1 tabIndex={-1} className={cn(pageTitle, 'focus:outline-none')}>
-          {t('cal.heading')}
-        </h1>
-        <p className={helper}>{t('cal.tz')}</p>
-      </motion.div>
-      <div className={workspace}>
-        <motion.section
+    <motion.div variants={entry.page} initial="hidden" animate="show">
+      {/* The band: the title, and their phrase from 640px (on phones it follows the agenda). */}
+      <PageBand>
+        <motion.div
           variants={entry.item}
-          aria-label={t('cal.heading')}
-          className={cn(panelWide, 'min-w-0 space-y-4 lg:self-start')}
+          className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2 sm:items-end lg:grid-cols-[minmax(0,1fr)_360px]"
         >
-          {controls}
-          {content}
-        </motion.section>
-        {wide ? (
-          <motion.div variants={entry.item} className={cn(panel, 'lg:sticky lg:top-4 lg:self-start')}>
-            {selected.state === 'none' ? (
-              <Intro next={load.state === 'loading' ? 'loading' : nextBookable} side onOpen={open} />
-            ) : (
-              <DetailState selected={selected} variant="panel" onRetry={refresh} onChanged={refresh} />
-            )}
-          </motion.div>
-        ) : (
-          <motion.div variants={entry.item} className={panel}>
-            <Intro next={null} side={false} onOpen={open} />
-          </motion.div>
-        )}
-      </div>
+          <h1 id="calendar-heading" tabIndex={-1} className={cn(pageTitle, 'text-on-sala focus:outline-none')}>
+            {t('cal.heading')}
+          </h1>
+          <div className="hidden sm:block">
+            <Motto tone="sala" />
+          </div>
+        </motion.div>
+      </PageBand>
+      <PageSheet>
+        <div className={workspace}>
+          <motion.section
+            variants={entry.item}
+            aria-label={t('cal.heading')}
+            className={cn(panelWide, 'min-w-0 space-y-4 lg:self-start')}
+          >
+            {controls}
+            <p className={helper}>
+              {/* A live region from the start, so the month-end line is announced when it appears. */}
+              <span role="status">
+                {jumpedHere ? `${t('cal.jumped', {month: formatMonth(month.year, month.month, lang)})} ` : ''}
+              </span>
+              {t('cal.tz')}
+            </p>
+            {content}
+          </motion.section>
+          {wide ? (
+            <motion.div variants={entry.item} className={cn(panel, 'lg:sticky lg:top-4 lg:self-start')}>
+              {selected.state === 'none' ? (
+                <SideIntro next={load.state === 'loading' ? 'loading' : nextBookable} onOpen={open} />
+              ) : (
+                <DetailState selected={selected} variant="panel" onRetry={refresh} onChanged={refresh} />
+              )}
+            </motion.div>
+          ) : (
+            <motion.div variants={entry.item} className={panel}>
+              <PhoneIntro />
+            </motion.div>
+          )}
+        </div>
+      </PageSheet>
     </motion.div>
   );
 }

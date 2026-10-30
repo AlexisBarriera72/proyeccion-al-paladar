@@ -22,6 +22,7 @@ import {Field, Textarea, describedBy} from '../components/ui/field.tsx';
 import {Choices} from '../components/ui/choice.tsx';
 import {Disclosure} from '../components/ui/disclosure.tsx';
 import {BookingStatus} from '../components/Status.tsx';
+import {PageBand, PageSheet} from '../components/Band.tsx';
 import {Price} from '../components/Price.tsx';
 import {PolicyBlock, WhenText} from './SessionDetail.tsx';
 import {CalendarExport} from './CalendarExport.tsx';
@@ -263,46 +264,54 @@ export function ManagePage({token}: {token: string}) {
 
   if (load.state === 'loading') {
     return (
-      <div aria-busy="true" className="max-w-3xl space-y-4">
+      <div aria-busy="true">
         <p className="sr-only">{t('app.loading')}</p>
-        <div className="h-10 w-2/3 rounded-xl bg-stone-200" />
-        <div className="h-64 rounded-2xl bg-stone-100" />
+        <PageBand>
+          <div className="h-10 w-2/3 max-w-xl rounded-xl bg-sala-raised md:h-16" />
+        </PageBand>
+        <PageSheet>
+          <div className="h-64 max-w-3xl rounded-2xl border border-border/70 bg-surface" />
+        </PageSheet>
       </div>
     );
   }
 
   if (load.state === 'invalid' || load.state === 'error') {
     return (
-      <div className="max-w-3xl space-y-4">
-        <h1 tabIndex={-1} className={cn(pageTitle, 'focus:outline-none')}>
-          {t('manage.titleReservation')}
-        </h1>
-        <div role="alert" className={cn(panel, 'space-y-4')}>
-          <p className="text-base leading-6 text-ink">
-            {load.state === 'invalid' ? t('manage.invalid') : t('manage.loadError')}
-          </p>
-          {load.state === 'error' ? (
-            <Button variant="secondary" onClick={() => void fetchView()}>
-              <RotateCw aria-hidden="true" />
-              {t('app.retry')}
-            </Button>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              <a
-                href={config?.instagramUrl ?? INSTAGRAM}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={buttonVariants({variant: 'secondary'})}
-              >
-                <ExternalLink aria-hidden="true" />
-                {t('cal.openInstagram')}
-              </a>
-              <Link to="/" className={buttonVariants({variant: 'ghost'})}>
-                {t('notFound.back')}
-              </Link>
-            </div>
-          )}
-        </div>
+      <div>
+        <PageBand>
+          <h1 tabIndex={-1} className={cn(pageTitle, 'text-on-sala focus:outline-none')}>
+            {t('manage.titleReservation')}
+          </h1>
+        </PageBand>
+        <PageSheet>
+          <div role="alert" className={cn(panel, 'max-w-3xl space-y-4')}>
+            <p className="text-base leading-6 text-ink">
+              {load.state === 'invalid' ? t('manage.invalid') : t('manage.loadError')}
+            </p>
+            {load.state === 'error' ? (
+              <Button variant="secondary" onClick={() => void fetchView()}>
+                <RotateCw aria-hidden="true" />
+                {t('app.retry')}
+              </Button>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <a
+                  href={config?.instagramUrl ?? INSTAGRAM}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={buttonVariants({variant: 'secondary'})}
+                >
+                  <ExternalLink aria-hidden="true" />
+                  {t('cal.openInstagram')}
+                </a>
+                <Link to="/" className={buttonVariants({variant: 'ghost'})}>
+                  {t('notFound.back')}
+                </Link>
+              </div>
+            )}
+          </div>
+        </PageSheet>
       </div>
     );
   }
@@ -318,148 +327,158 @@ export function ManagePage({token}: {token: string}) {
   const hasExport = b.session.startsAt !== null && b.status !== 'cancelled';
 
   return (
-    <motion.div variants={entry.page} initial="hidden" animate="show" className="space-y-4">
-      <motion.div variants={entry.item} className="space-y-2">
-        <h1 tabIndex={-1} className={cn(pageTitle, 'focus:outline-none')}>
-          {isRequest ? t('manage.titleRequest') : t('manage.titleReservation')}
-        </h1>
-        <p className={cn('text-base leading-6 text-ink', numbers)}>
-          {t('manage.reference')}: <span className="font-semibold">{b.reference}</span>
-        </p>
-      </motion.div>
-
-      {/* A proposal waits for the guest, so it comes first. */}
-      {b.proposals.map(proposal => (
-        <motion.div key={proposal.id} variants={entry.item}>
-          <Proposal
-            proposal={proposal}
-            busy={busy === `accept-${proposal.id}`}
-            onAccept={() =>
-              void act(
-                `accept-${proposal.id}`,
-                '/api/public/manage/accept',
-                {proposalId: proposal.id},
-                t('manage.accepted'),
-              )
-            }
-          />
+    <motion.div variants={entry.page} initial="hidden" animate="show">
+      <PageBand>
+        <motion.div variants={entry.item} className="space-y-3">
+          <h1 tabIndex={-1} className={cn(pageTitle, 'text-on-sala focus:outline-none')}>
+            {isRequest ? t('manage.titleRequest') : t('manage.titleReservation')}
+          </h1>
+          <p className={cn('text-base leading-6 text-on-sala', numbers)}>
+            {t('manage.reference')}: <span className="font-semibold">{b.reference}</span>
+          </p>
         </motion.div>
-      ))}
+      </PageBand>
+      <PageSheet>
+        <div className="space-y-4">
+          {/* A proposal waits for the guest, so it comes first. */}
+          {b.proposals.map(proposal => (
+            <motion.div key={proposal.id} variants={entry.item}>
+              <Proposal
+                proposal={proposal}
+                busy={busy === `accept-${proposal.id}`}
+                onAccept={() =>
+                  void act(
+                    `accept-${proposal.id}`,
+                    '/api/public/manage/accept',
+                    {proposalId: proposal.id},
+                    t('manage.accepted'),
+                  )
+                }
+              />
+            </motion.div>
+          ))}
 
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8">
-        <motion.section
-          variants={entry.item}
-          aria-labelledby={`${ids}-status`}
-          className={cn(panel, 'space-y-5 lg:col-start-1')}
-        >
-          <div className="space-y-1">
-            <h2 id={`${ids}-status`} className={helper}>
-              {t('manage.status')}
-            </h2>
-            <BookingStatus status={b.status} />
-            <p className="text-base leading-6 text-ink">{t(`bhelp.${b.status}`)}</p>
-          </div>
-          <div role="status" aria-live="polite">
-            {notice ? <NoticeText notice={notice} /> : null}
-          </div>
-          <SessionSummary session={b.session} partySize={b.partySize} />
-        </motion.section>
+          <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8">
+            <motion.section
+              variants={entry.item}
+              aria-labelledby={`${ids}-status`}
+              className={cn(panel, 'space-y-5 lg:col-start-1')}
+            >
+              <div className="space-y-1">
+                <h2 id={`${ids}-status`} className={helper}>
+                  {t('manage.status')}
+                </h2>
+                <BookingStatus status={b.status} />
+                <p className="text-base leading-6 text-ink">{t(`bhelp.${b.status}`)}</p>
+              </div>
+              <div role="status" aria-live="polite">
+                {notice ? <NoticeText notice={notice} /> : null}
+              </div>
+              <SessionSummary session={b.session} partySize={b.partySize} />
+            </motion.section>
 
-        {hasExport || b.canWithdraw || canAsk ? (
-          <motion.section
-            variants={entry.item}
-            aria-labelledby={`${ids}-actions`}
-            className={cn(panel, 'space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1')}
-          >
-            <h2 id={`${ids}-actions`} className={sectionTitle}>
-              {t('manage.actions')}
-            </h2>
-            <CalendarExport
-              session={b.session}
-              status={b.status}
-              reference={b.reference}
-              partySize={b.partySize}
-              manageUrl={`${location.origin}/reservacion/${token}/`}
-              full
-            />
-            {canAsk ? (
-              <div className="space-y-2 border-t border-border/70 pt-4">
-                <Button variant="secondary" width="full" onClick={() => setAskOpen(true)} disabled={busy !== null}>
-                  <MessageSquareText aria-hidden="true" />
-                  {t('manage.ask')}
-                </Button>
-                {b.openRequests.length ? (
-                  <p className={cn(helper, numbers)}>{t('manage.openRequests', {count: b.openRequests.length})}</p>
+            {hasExport || b.canWithdraw || canAsk ? (
+              <motion.section
+                variants={entry.item}
+                aria-labelledby={`${ids}-actions`}
+                className={cn(panel, 'space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1')}
+              >
+                <h2 id={`${ids}-actions`} className={sectionTitle}>
+                  {t('manage.actions')}
+                </h2>
+                <CalendarExport
+                  session={b.session}
+                  status={b.status}
+                  reference={b.reference}
+                  partySize={b.partySize}
+                  manageUrl={`${location.origin}/reservacion/${token}/`}
+                  full
+                />
+                {canAsk ? (
+                  <div className="space-y-2 border-t border-border/70 pt-4">
+                    <Button variant="secondary" width="full" onClick={() => setAskOpen(true)} disabled={busy !== null}>
+                      <MessageSquareText aria-hidden="true" />
+                      {t('manage.ask')}
+                    </Button>
+                    {b.openRequests.length ? (
+                      <p className={cn(helper, numbers)}>{t('manage.openRequests', {count: b.openRequests.length})}</p>
+                    ) : null}
+                  </div>
                 ) : null}
-              </div>
+                {b.canWithdraw ? (
+                  <div className="border-t border-border/70 pt-4">
+                    <Button
+                      variant="quiet"
+                      width="full"
+                      onClick={() => setConfirmWithdraw(true)}
+                      disabled={busy !== null}
+                    >
+                      <CircleX aria-hidden="true" />
+                      {t('manage.withdraw')}
+                    </Button>
+                  </div>
+                ) : null}
+              </motion.section>
             ) : null}
-            {b.canWithdraw ? (
-              <div className="border-t border-border/70 pt-4">
-                <Button variant="quiet" width="full" onClick={() => setConfirmWithdraw(true)} disabled={busy !== null}>
-                  <CircleX aria-hidden="true" />
-                  {t('manage.withdraw')}
-                </Button>
-              </div>
-            ) : null}
-          </motion.section>
-        ) : null}
 
-        <motion.section
-          variants={entry.item}
-          aria-labelledby={`${ids}-terms`}
-          className={cn(panel, 'space-y-3 lg:col-start-1')}
-        >
-          <h2 id={`${ids}-terms`} className={sectionTitle}>
-            {t('manage.terms')}
-          </h2>
-          {locked.acceptedAt !== null ? (
-            <>
-              <p className={helper}>{t('manage.acceptedOn', {date: formatLongDate(locked.acceptedAt, lang)})}</p>
-              {locked.priceStatus ? (
-                <div>
-                  <p className={helper}>{t('manage.price')}</p>
-                  <p className={cn('text-base leading-6 text-ink', numbers)}>
-                    {termsPrice(
-                      {
-                        priceStatus: locked.priceStatus,
-                        unitPriceCents: locked.unitPriceCents,
-                        currency: locked.currency,
-                      },
-                      t,
-                      lang,
-                    )}
-                  </p>
-                  {locked.priceStatus === 'approved' && locked.unitPriceCents !== null && locked.currency ? (
-                    <p className={cn(helper, numbers)}>
-                      {t('flow.total', {
-                        amount: formatMoney(locked.unitPriceCents * b.partySize, locked.currency, lang),
-                      })}
-                    </p>
+            <motion.section
+              variants={entry.item}
+              aria-labelledby={`${ids}-terms`}
+              className={cn(panel, 'space-y-3 lg:col-start-1')}
+            >
+              <h2 id={`${ids}-terms`} className={sectionTitle}>
+                {t('manage.terms')}
+              </h2>
+              {locked.acceptedAt !== null ? (
+                <>
+                  <p className={helper}>{t('manage.acceptedOn', {date: formatLongDate(locked.acceptedAt, lang)})}</p>
+                  {locked.priceStatus ? (
+                    <div>
+                      <p className={helper}>{t('manage.price')}</p>
+                      <p className={cn('text-base leading-6 text-ink', numbers)}>
+                        {termsPrice(
+                          {
+                            priceStatus: locked.priceStatus,
+                            unitPriceCents: locked.unitPriceCents,
+                            currency: locked.currency,
+                          },
+                          t,
+                          lang,
+                        )}
+                      </p>
+                      {locked.priceStatus === 'approved' && locked.unitPriceCents !== null && locked.currency ? (
+                        <p className={cn(helper, numbers)}>
+                          {t('flow.total', {
+                            amount: formatMoney(locked.unitPriceCents * b.partySize, locked.currency, lang),
+                          })}
+                        </p>
+                      ) : null}
+                    </div>
                   ) : null}
-                </div>
-              ) : null}
-              <Disclosure summary={t('manage.readTerms')}>
-                <PolicyBlock policy={locked.policy} quoteOpen />
-              </Disclosure>
-            </>
-          ) : (
-            <>
-              <p className="text-base leading-6 text-ink">{t('manage.noTerms')}</p>
-              <div>
-                <p className={helper}>{t('detail.price')}</p>
+                  <Disclosure summary={t('manage.readTerms')}>
+                    <PolicyBlock policy={locked.policy} quoteOpen />
+                  </Disclosure>
+                </>
+              ) : (
+                <>
+                  <p className="text-base leading-6 text-ink">{t('manage.noTerms')}</p>
+                  <div>
+                    <p className={helper}>{t('detail.price')}</p>
+                    <p className={cn('text-base leading-6 text-ink', numbers)}>
+                      <Price price={b.session.price} />
+                    </p>
+                  </div>
+                </>
+              )}
+              {b.netPaidCents > 0 ? (
                 <p className={cn('text-base leading-6 text-ink', numbers)}>
-                  <Price price={b.session.price} />
+                  {t('manage.paid', {amount: formatMoney(b.netPaidCents, currency, lang)})}
                 </p>
-              </div>
-            </>
-          )}
-          {b.netPaidCents > 0 ? (
-            <p className={cn('text-base leading-6 text-ink', numbers)}>
-              {t('manage.paid', {amount: formatMoney(b.netPaidCents, currency, lang)})}
-            </p>
-          ) : null}
-        </motion.section>
-      </div>
+              ) : null}
+            </motion.section>
+          </div>
+        </div>
+      </PageSheet>
 
       <Dialog
         open={confirmWithdraw}

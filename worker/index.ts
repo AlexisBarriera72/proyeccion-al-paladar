@@ -14,7 +14,7 @@ const text = (body: string, status: number) =>
 const page = (title: string, body: string, status: number) =>
   new Response(
     `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title></head>` +
-      `<body style="font-family: Arial, sans-serif; background:#fafaf9; color:#1c1917; padding:24px"><h1 style="font-size:24px">${title}</h1><p>${body}</p></body></html>`,
+      `<body style="font-family: Arial, sans-serif; background:#f8f2e9; color:#1c1612; padding:24px"><h1 style="font-size:24px">${title}</h1><p>${body}</p></body></html>`,
     {status, headers: {'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store'}},
   );
 

@@ -1,5 +1,6 @@
 // WCAG 2 contrast for the color tokens in src/styles.css (@theme) and the Tailwind stone steps
-// the interface uses (DESIGN.md, "Tokens"). 4.5:1 for text, 3:1 for field borders and focus rings.
+// the interface uses (DESIGN.md, "Tokens"): the paper surfaces and the dark band (the sala).
+// 4.5:1 for text, 3:1 for field borders and focus rings.
 //
 // Tailwind v4 defines stone in oklch (node_modules/tailwindcss/theme.css). This test reads those
 // values and converts them the way a browser renders them (CSS Color 4: OKLCH → OKLab → LMS →
@@ -81,7 +82,25 @@ function below(pairs: [string, string][], minimum: number): string[] {
 // ---------------------------------------------------------------- tests
 
 test('the @theme block defines every color token', () => {
-  for (const name of ['canvas', 'surface', 'ink', 'muted', 'border', 'accent', 'accent-hover']) {
+  for (const name of [
+    'canvas',
+    'surface',
+    'ink',
+    'muted',
+    'border',
+    'accent',
+    'accent-hover',
+    'wash',
+    'wash-strong',
+    'ticket',
+    'sala',
+    'sala-raised',
+    'sala-line',
+    'on-sala',
+    'on-sala-muted',
+    'brass',
+    'brass-hover',
+  ]) {
     assert.match(tokens[name] ?? '', /^#[0-9a-f]{6}$/, `--color-${name}`);
   }
 });
@@ -112,26 +131,47 @@ test('the WCAG ratio matches published values', () => {
 
 test('text is at least 4.5:1', () => {
   const pairs: [string, string][] = [
-    // Body text and secondary text on every background they sit on.
+    // Body text and secondary text on every paper background they sit on: the page, panels,
+    // insets and tickets, chips at rest and on hover.
     ['ink', 'canvas'],
     ['ink', 'surface'],
+    ['ink', 'wash'],
+    ['ink', 'wash-strong'],
+    ['ink', 'ticket'],
     ['ink', 'stone-100'],
     ['ink', 'stone-50'],
     ['muted', 'canvas'],
     ['muted', 'surface'],
+    ['muted', 'wash'],
+    ['muted', 'ticket'],
     ['muted', 'stone-100'],
     ['muted', 'stone-50'],
-    // Primary buttons and the selected staff nav item.
+    // Primary buttons and the selected view or staff sheet item.
     ['white', 'accent'],
     ['white', 'accent-hover'],
     ['white', 'ink'],
-    // Links, at rest and on hover, on the panels they sit on.
+    // Links, kicker labels and stub dates, at rest and on hover, on what they sit on.
     ['accent', 'surface'],
     ['accent', 'canvas'],
+    ['accent', 'wash'],
+    ['accent', 'ticket'],
     ['accent', 'stone-100'],
     ['accent-hover', 'surface'],
     ['accent-hover', 'canvas'],
     ['accent-hover', 'stone-100'],
+    // The dark band: titles, text and links in ivory, secondary text, brass, on the band and on
+    // its raised hover; the demo banner and brass buttons; the selected staff section (sala on
+    // ivory).
+    ['on-sala', 'sala'],
+    ['on-sala', 'sala-raised'],
+    ['on-sala-muted', 'sala'],
+    ['on-sala-muted', 'sala-raised'],
+    ['brass', 'sala'],
+    ['brass', 'sala-raised'],
+    ['brass-hover', 'sala'],
+    ['sala', 'brass'],
+    ['sala', 'brass-hover'],
+    ['sala', 'on-sala'],
   ];
   assert.deepEqual(below(pairs, 4.5), []);
 });
@@ -155,10 +195,14 @@ test('field borders and focus rings are at least 3:1', () => {
     // Inputs: a stone-500 border on a white field, on a white panel or the canvas.
     ['stone-500', 'surface'],
     ['stone-500', 'canvas'],
-    // The focus outline is the accent, on every background a control sits on.
+    // The focus outline is the accent on paper, on every background a control sits on...
     ['accent', 'surface'],
     ['accent', 'canvas'],
     ['accent', 'stone-100'],
+    ['accent', 'wash'],
+    // ...and brass on the dark band.
+    ['brass', 'sala'],
+    ['brass', 'sala-raised'],
   ];
   assert.deepEqual(below(pairs, 3), []);
 });

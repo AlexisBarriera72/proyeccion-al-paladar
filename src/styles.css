@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 
-/* Inter, self-hosted (public/fonts/inter, OFL). The fallback stack stays usable. */
+/* Inter for text and Fraunces for titles, both self-hosted (public/fonts, OFL; npm run fonts).
+   The fallback stacks stay usable. */
 @font-face {
   font-family: 'Inter';
   font-style: normal;
@@ -21,24 +22,115 @@
     U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
     U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
+/* Fraunces upright: optical size and weight axes, so a 64px title and a 20px name each get their
+   own drawing. The italic (the motto only) has the weight axis alone, to keep it light. */
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/fraunces/fraunces-latin-opsz-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
+    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/fraunces/fraunces-latin-ext-opsz-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/fraunces/fraunces-latin-wght-italic.woff2') format('woff2-variations');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC,
+    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Fraunces';
+  font-style: italic;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/fraunces/fraunces-latin-ext-wght-italic.woff2') format('woff2-variations');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
 
-/* The brief's tokens (research/BUILD_PROMPT.md §0): a light stone palette, charcoal text and one
-   accent family, amber. A proposed interface direction, not the company's brand system. */
+/* "Sala y boleto" (DESIGN.md, Tokens). The owner chose it on October 30, 2026, in place of the
+   brief's light stone palette: a dark cinema band (header, page intro, footer) over warm paper,
+   where the calendar and forms live. One accent family: amber on paper, brass on the dark band.
+   A proposed interface direction, not the company's brand system. */
 @theme {
   --font-sans: 'Inter', 'Segoe UI', Arial, sans-serif;
-  --color-canvas: #fafaf9;
-  --color-surface: #ffffff;
-  --color-ink: #1c1917;
-  --color-muted: #57534e;
-  --color-border: #d6d3d1;
+  --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+
+  /* Paper: the working surfaces. */
+  --color-canvas: #f8f2e9;
+  --color-surface: #fffcf7;
+  --color-ink: #1c1612;
+  --color-muted: #5b5047;
+  --color-border: #dccfbf;
   --color-accent: #b45309;
   --color-accent-hover: #92400e;
+  /* A pale amber fill for calendar chips, and the ivory of a ticket on the dark band. */
+  --color-wash: #fcf4e6;
+  --color-wash-strong: #f7e6c6;
+  --color-ticket: #fbf6ee;
+
+  /* The sala: the dark band, its raised surfaces and hairlines, its text, and brass. */
+  --color-sala: #17110d;
+  --color-sala-raised: #231a14;
+  --color-sala-line: #3e3128;
+  --color-on-sala: #f4ebdf;
+  --color-on-sala-muted: #c4b29f;
+  --color-brass: #e2a13f;
+  --color-brass-hover: #f0b65a;
+
+  --animate-marquee: marquee 60s linear infinite;
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+}
+
+/* The sala's texture: a still film grain, and on page bands a soft warm glow behind the title row
+   (centered low, so it never meets the header's edge).
+   Only elements marked data-texture carry a background image (tests/e2e/design.spec.ts). */
+@utility texture-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 0.92 0 0 0 0 0.82 0 0 0 0.11 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+}
+@utility texture-glow {
+  background-image:
+    radial-gradient(42% 80% at 80% 55%, rgb(226 161 63 / 0.13), transparent 72%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 0.92 0 0 0 0 0.82 0 0 0 0.11 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+}
+
+/* A ticket's two notches, cut where the stub meets the body (--stub from the left edge). A mask,
+   so the band's grain shows through; it sits on an inner element, never on the focusable one,
+   whose focus ring a mask would cut away. */
+@utility ticket-cut {
+  mask:
+    radial-gradient(circle var(--ticket-notch, 0.625rem) at var(--stub, 5.5rem) 0, transparent 97%, #000) top / 100% 51%
+      no-repeat,
+    radial-gradient(circle var(--ticket-notch, 0.625rem) at var(--stub, 5.5rem) 100%, transparent 97%, #000) bottom /
+      100% 51% no-repeat;
 }
 
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
     color-scheme: light;
+    background-color: var(--color-sala);
   }
   body {
     @apply bg-canvas font-sans text-base leading-6 text-ink antialiased;
@@ -57,7 +149,9 @@
   dt,
   label,
   td,
-  th {
+  th,
+  figcaption,
+  blockquote {
     overflow-wrap: anywhere;
   }
 }

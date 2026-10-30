@@ -1,27 +1,36 @@
-// The design contract (DESIGN.md), read from computed styles: Inter and the type scale, one
-// accent family, no blur, gradients or glows, and calendar cells that never move.
+// The design contract (DESIGN.md, "Sala y boleto"), read from computed styles: Fraunces titles
+// over Inter text and the type scale; one accent family (amber on paper, brass on the dark band);
+// texture only on the dark band; no blur, glows or colored shadows; the marquee can be paused
+// and stays still under reduced motion; and calendar cells that never move.
 import {expect, test} from '@playwright/test';
 import {OWNER, isDesktop} from './fixtures.ts';
 
-test('type scale: Inter, page title, body, helper and tabular numbers', async ({page}) => {
+/** True when a face of this family has actually loaded (not just a fallback being available). */
+const loaded = (family: string) =>
+  `[...document.fonts].some(face => face.family.replace(/["']/g, '') === ${JSON.stringify(family)} && face.status === 'loaded')`;
+
+test('type scale: Fraunces titles, Inter text, helper and tabular numbers', async ({page}) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', {level: 1})).toBeVisible();
-  expect(await page.evaluate(() => document.fonts.check('16px Inter'))).toBe(true);
-  const h1 = await page.getByRole('heading', {level: 1}).evaluate(el => {
+  const heading = page.getByRole('heading', {level: 1});
+  await expect(heading).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  expect(await page.evaluate(loaded('Fraunces'))).toBe(true);
+  expect(await page.evaluate(loaded('Inter'))).toBe(true);
+  const h1 = await heading.evaluate(el => {
     const s = getComputedStyle(el);
     return {family: s.fontFamily, size: s.fontSize, weight: s.fontWeight, spacing: s.letterSpacing, line: s.lineHeight};
   });
-  const size = isDesktop(page) ? 44 : 32;
-  expect(h1.family).toMatch(/^Inter/);
+  const size = isDesktop(page) ? 64 : 40;
+  expect(h1.family).toMatch(/^Fraunces/);
   expect(h1.size).toBe(`${size}px`);
   expect(h1.weight).toBe('500');
-  expect(parseFloat(h1.spacing)).toBeCloseTo(size * -0.04, 1);
-  expect(parseFloat(h1.line)).toBeCloseTo(size * 1.08, 1);
+  expect(parseFloat(h1.spacing)).toBeCloseTo(size * -0.02, 1);
+  expect(parseFloat(h1.line)).toBeCloseTo(size * 1.04, 1);
   const body = await page.evaluate(() => {
     const s = getComputedStyle(document.body);
-    return [s.fontSize, s.lineHeight];
+    return [s.fontFamily.split(',')[0].replace(/["']/g, ''), s.fontSize, s.lineHeight];
   });
-  expect(body).toEqual(['16px', '24px']);
+  expect(body).toEqual(['Inter', '16px', '24px']);
   const helper = await page
     .locator('main p.text-muted')
     .first()
@@ -32,6 +41,7 @@ test('type scale: Inter, page title, body, helper and tabular numbers', async ({
     .first()
     .evaluate(el => getComputedStyle(el).fontVariantNumeric);
   expect(numeric).toContain('tabular-nums');
+  expect(numeric).toContain('lining-nums');
 });
 
 const AUDIT = `(() => {
@@ -55,6 +65,8 @@ const AUDIT = `(() => {
   for (const el of document.querySelectorAll('body *')) {
     if (el.closest('img, picture, svg[data-photo]')) continue;
     const s = getComputedStyle(el);
+    // One accent family: every saturated color is amber or brass (hue 15 to 45), including the
+    // warm paper and the dark band's browns.
     for (const prop of ['color', 'backgroundColor', 'borderTopColor', 'borderBottomColor', 'outlineColor', 'fill', 'stroke']) {
       const c = parse(s[prop]);
       if (!c || c.a === 0) continue;
@@ -63,7 +75,14 @@ const AUDIT = `(() => {
     }
     if (s.backdropFilter && s.backdropFilter !== 'none') found.push(el.tagName + ' backdrop-filter');
     if (s.filter && s.filter !== 'none') found.push(el.tagName + ' filter ' + s.filter);
-    if (s.backgroundImage && s.backgroundImage !== 'none') found.push(el.tagName + ' background-image ' + s.backgroundImage);
+    // Texture lives only on the dark band (header, page band, footer): a still grain, and on page
+    // bands one soft amber glow. Nothing else draws a background image or a gradient.
+    if (s.backgroundImage && s.backgroundImage !== 'none') {
+      const onBand = el.hasAttribute('data-texture') && s.backgroundColor === 'rgb(23, 17, 13)';
+      const gradients = (s.backgroundImage.match(/gradient\\(/g) || []).length;
+      const grain = s.backgroundImage.includes('feTurbulence');
+      if (!onBand || !grain || gradients > 1) found.push(el.tagName + ' background-image ' + s.backgroundImage.slice(0, 80));
+    }
     if (s.textShadow && s.textShadow !== 'none') found.push(el.tagName + ' text-shadow');
     for (const m of (s.boxShadow || '').matchAll(/rgba?\\([^)]+\\)/g)) {
       const c = parse(m[0]);
@@ -79,13 +98,45 @@ for (const [name, path] of [
   ['terms', '/politicas/'],
   ['staff', '/equipo/reservaciones/'],
 ]) {
-  test(`one accent and no banned effects: ${name}`, async ({page}) => {
+  test(`one accent, texture only on the band, no banned effects: ${name}`, async ({page}) => {
     await page.setExtraHTTPHeaders(OWNER);
     await page.goto(path);
     await page.waitForLoadState('networkidle');
     expect(await page.evaluate(AUDIT)).toEqual([]);
+    // The band is there: the header (and on guest pages the footer) carry the texture.
+    expect(await page.locator('[data-texture]').count()).toBeGreaterThan(0);
   });
 }
+
+test('the marquee can be paused, is hidden from screen readers, and is still under reduced motion', async ({
+  page,
+  browser,
+}, info) => {
+  await page.goto('/politicas/');
+  const strip = page.locator('[data-marquee]');
+  await expect(strip).toHaveAttribute('aria-hidden', 'true');
+  const track = strip.locator('> div');
+  expect(await track.evaluate(el => getComputedStyle(el).animationName)).toBe('marquee');
+  expect(await track.evaluate(el => getComputedStyle(el).animationPlayState)).toBe('running');
+  const pause = page.getByRole('button', {name: 'Pausar el texto en movimiento'});
+  await expect(pause).toHaveAttribute('aria-pressed', 'false');
+  await pause.click();
+  await expect(pause).toHaveAttribute('aria-pressed', 'true');
+  expect(await track.evaluate(el => getComputedStyle(el).animationPlayState)).toBe('paused');
+
+  const context = await browser.newContext({
+    reducedMotion: 'reduce',
+    viewport: info.project.use.viewport ?? undefined,
+    baseURL: 'http://127.0.0.1:8788',
+  });
+  const still = await context.newPage();
+  await still.goto('/politicas/');
+  await expect(still.locator('[data-marquee]')).toHaveCount(1);
+  expect(await still.locator('[data-marquee] > div').evaluate(el => getComputedStyle(el).animationName)).toBe('none');
+  // Nothing moves, so there is nothing to pause.
+  await expect(still.getByRole('button', {name: 'Pausar el texto en movimiento'})).toHaveCount(0);
+  await context.close();
+});
 
 test('calendar cells never move', async ({page}) => {
   test.skip(!isDesktop(page));

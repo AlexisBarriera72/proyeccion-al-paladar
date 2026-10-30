@@ -17,17 +17,33 @@ const ICONS = {
 
 const pill = 'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-sm leading-5';
 
-export function AvailabilityBadge({availability, className}: {availability: Availability; className?: string}) {
+export function AvailabilityBadge({
+  availability,
+  tone = 'paper',
+  className,
+}: {
+  availability: Availability;
+  /** 'sala' on the dark band: ivory instead of ink, with the same shapes. */
+  tone?: 'paper' | 'sala';
+  className?: string;
+}) {
   const {t} = useT();
   const Icon = ICONS[availability];
   const strong = availability === 'few_left' || availability === 'sold_out' || availability === 'cancelled';
+  const sala = tone === 'sala';
   return (
     <span
       className={cn(
         pill,
-        strong ? 'border-ink font-semibold text-ink' : 'border-stone-400 text-ink',
+        strong
+          ? sala
+            ? 'border-on-sala font-semibold text-on-sala'
+            : 'border-ink font-semibold text-ink'
+          : sala
+            ? 'border-on-sala/50 text-on-sala'
+            : 'border-stone-400 text-ink',
         availability === 'available' && 'border-transparent pl-0',
-        availability === 'past' && 'border-stone-300 text-muted',
+        availability === 'past' && (sala ? 'border-sala-line text-on-sala-muted' : 'border-stone-300 text-muted'),
         className,
       )}
     >

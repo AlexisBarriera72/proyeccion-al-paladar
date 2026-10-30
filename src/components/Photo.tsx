@@ -11,6 +11,8 @@ export function Photo({
   imgClassName,
   priority = false,
   caption = true,
+  aspect,
+  captionClassName,
 }: {
   slot: string;
   sizes: string;
@@ -18,6 +20,9 @@ export function Photo({
   imgClassName?: string;
   priority?: boolean;
   caption?: boolean;
+  /** A crop ('4 / 3'); by default the photo keeps its own proportions. */
+  aspect?: string;
+  captionClassName?: string;
 }) {
   const {lang} = useT();
   const photo = photos[slot];
@@ -33,11 +38,11 @@ export function Photo({
         alt={photo.alt[lang]}
         loading={priority ? 'eager' : 'lazy'}
         decoding="async"
-        className={cn('block h-auto w-full rounded-2xl bg-stone-200 object-cover', imgClassName)}
-        style={{aspectRatio: `${photo.width} / ${photo.height}`}}
+        className={cn('block h-auto w-full rounded-2xl bg-sala-raised object-cover', imgClassName)}
+        style={{aspectRatio: aspect ?? `${photo.width} / ${photo.height}`}}
       />
       {caption && photo.caption ? (
-        <figcaption className="text-sm leading-5 text-muted">{photo.caption[lang]}</figcaption>
+        <figcaption className={cn('text-sm leading-5 text-muted', captionClassName)}>{photo.caption[lang]}</figcaption>
       ) : null}
     </figure>
   );

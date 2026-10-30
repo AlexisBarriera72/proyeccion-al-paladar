@@ -13,6 +13,7 @@ import {detailTitle, helper, pageTitle, panel} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button} from '../components/ui/button.tsx';
 import {Disclosure} from '../components/ui/disclosure.tsx';
+import {PageBand, PageSheet} from '../components/Band.tsx';
 import {PolicyBlock} from './SessionDetail.tsx';
 
 type Policies = {current: PublicPolicy[]; earlier: PublicPolicy[]; announced: PublicPolicy[]};
@@ -48,7 +49,7 @@ export function PoliciesPage() {
   let body;
   if (load.state === 'loading') {
     body = (
-      <div aria-busy="true" className="h-64 rounded-2xl bg-stone-100">
+      <div aria-busy="true" className="h-64 rounded-2xl border border-border/70 bg-surface">
         <p className="sr-only">{t('app.loading')}</p>
       </div>
     );
@@ -120,14 +121,18 @@ export function PoliciesPage() {
   }
 
   return (
-    <motion.div variants={entry.page} initial="hidden" animate="show" className="max-w-3xl space-y-4">
-      <motion.div variants={entry.item} className="space-y-2">
-        <h1 tabIndex={-1} className={cn(pageTitle, 'focus:outline-none')}>
-          {t('policies.title')}
-        </h1>
-        <p className={helper}>{t('policies.locked')}</p>
-      </motion.div>
-      {body}
+    <motion.div variants={entry.page} initial="hidden" animate="show">
+      <PageBand>
+        <motion.div variants={entry.item} className="max-w-3xl space-y-3">
+          <h1 tabIndex={-1} className={cn(pageTitle, 'text-on-sala focus:outline-none')}>
+            {t('policies.title')}
+          </h1>
+          <p className="text-sm leading-5 text-on-sala-muted">{t('policies.locked')}</p>
+        </motion.div>
+      </PageBand>
+      <PageSheet>
+        <div className="max-w-3xl space-y-4">{body}</div>
+      </PageSheet>
     </motion.div>
   );
 }

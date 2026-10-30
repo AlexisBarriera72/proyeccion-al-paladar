@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import {Link, useLocation} from '../lib/router.tsx';
 import {cn} from '../lib/cn.ts';
-import {helper, numbers, pageTitle} from '../lib/styles.ts';
+import {helper, numbers, workTitle} from '../lib/styles.ts';
 import {isDemoPage} from '../components/Layout.tsx';
 import {Button} from '../components/ui/button.tsx';
 import {Dialog} from '../components/ui/dialog.tsx';
@@ -98,7 +98,7 @@ function useQueueCounts(me: Me | null, path: string) {
   return {counts, refresh};
 }
 
-function CountBadge({count, current}: {count: number; current?: boolean}) {
+function CountBadge({count, current, tone = 'paper'}: {count: number; current?: boolean; tone?: 'paper' | 'sala'}) {
   const {t} = useStaffT();
   if (count <= 0) return null;
   return (
@@ -106,7 +106,13 @@ function CountBadge({count, current}: {count: number; current?: boolean}) {
       className={cn(
         'inline-flex min-w-6 items-center justify-center rounded-full border px-1.5 text-sm leading-5',
         numbers,
-        current ? 'border-white text-white' : 'border-stone-500 text-ink',
+        tone === 'sala'
+          ? current
+            ? 'border-sala text-sala'
+            : 'border-on-sala/60 text-on-sala'
+          : current
+            ? 'border-white text-white'
+            : 'border-stone-500 text-ink',
       )}
     >
       <span aria-hidden="true">{count}</span>
@@ -116,33 +122,47 @@ function CountBadge({count, current}: {count: number; current?: boolean}) {
 }
 
 const linkFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+// The header is the dark band: ivory text, brass focus.
+const salaFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass';
+const salaLink = cn(
+  'inline-flex min-h-11 items-center rounded-2xl px-3 text-sm font-medium leading-5 text-on-sala hover:bg-sala-raised',
+  salaFocus,
+);
 
-function LangButton() {
+function LangButton({tone = 'paper'}: {tone?: 'paper' | 'sala'}) {
   const {t, lang, setLang} = useStaffT();
   return (
     <button
       type="button"
       onClick={() => setLang(lang === 'es' ? 'en' : 'es')}
       lang={lang === 'es' ? 'en' : 'es'}
-      className={cn(
-        'inline-flex min-h-11 items-center rounded-2xl px-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100',
-        linkFocus,
-      )}
+      className={
+        tone === 'sala'
+          ? salaLink
+          : cn(
+              'inline-flex min-h-11 items-center rounded-2xl px-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100',
+              linkFocus,
+            )
+      }
     >
       {t('app.lang')}
     </button>
   );
 }
 
-function SiteLink() {
+function SiteLink({tone = 'paper'}: {tone?: 'paper' | 'sala'}) {
   const {t} = useStaffT();
   return (
     <a
       href="/"
-      className={cn(
-        'inline-flex min-h-11 items-center rounded-2xl px-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100',
-        linkFocus,
-      )}
+      className={
+        tone === 'sala'
+          ? salaLink
+          : cn(
+              'inline-flex min-h-11 items-center rounded-2xl px-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100',
+              linkFocus,
+            )
+      }
     >
       {t('staff.viewSite')}
     </a>
@@ -156,7 +176,7 @@ function AccountMenu({me}: {me: Me}) {
   return (
     <M.Root modal={false}>
       <M.Trigger asChild>
-        <Button variant="ghost">
+        <Button variant="onSala">
           <UserRound aria-hidden="true" />
           <span className="sr-only">{t('staff.accountOf', {email: me.email})} </span>
           {role}
@@ -193,7 +213,7 @@ function DesktopNav({current, counts}: {current: string; counts: Record<Queue, n
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {NAV.map((group, index) => (
           <div key={group.key} className="flex items-center gap-2">
-            {index ? <span aria-hidden="true" className="h-6 w-px bg-border" /> : null}
+            {index ? <span aria-hidden="true" className="h-6 w-px bg-sala-line" /> : null}
             <ul aria-label={t(group.key)} className="flex flex-wrap gap-1">
               {group.links.map(link => {
                 const active = current === link.to;
@@ -203,13 +223,13 @@ function DesktopNav({current, counts}: {current: string; counts: Record<Queue, n
                       to={link.to}
                       aria-current={active ? 'page' : undefined}
                       className={cn(
-                        'inline-flex min-h-11 items-center gap-2 rounded-2xl px-3 text-sm font-medium leading-5 text-ink hover:bg-stone-100',
-                        linkFocus,
-                        active && 'bg-ink text-white hover:bg-ink',
+                        'inline-flex min-h-11 items-center gap-2 rounded-2xl px-3 text-sm font-medium leading-5 text-on-sala hover:bg-sala-raised',
+                        salaFocus,
+                        active && 'bg-on-sala text-sala hover:bg-on-sala',
                       )}
                     >
                       {t(link.key)}
-                      {link.queue ? <CountBadge count={counts[link.queue]} current={active} /> : null}
+                      {link.queue ? <CountBadge count={counts[link.queue]} current={active} tone="sala" /> : null}
                     </Link>
                   </li>
                 );
@@ -233,7 +253,8 @@ function SectionsSheet({me, current, counts}: {me: Me; current: string; counts: 
   return (
     <>
       <Button
-        variant="secondary"
+        variant="onSala"
+        className="border border-on-sala/50"
         onClick={() => setOpen(true)}
         onFocus={() => {
           if (!toHeading.current) return;
@@ -246,7 +267,7 @@ function SectionsSheet({me, current, counts}: {me: Me; current: string; counts: 
         <span className="max-[23rem]:sr-only">{t('nav.sections')}</span>
         {waiting ? (
           <>
-            <span aria-hidden="true" className="size-2 rounded-full bg-ink" />
+            <span aria-hidden="true" className="size-2 rounded-full bg-brass" />
             <span className="sr-only">{t('nav.waiting')}</span>
           </>
         ) : null}
@@ -318,27 +339,27 @@ function Frame({me, children}: {me: Me | null; children: ReactNode}) {
       >
         {t('app.skip')}
       </a>
-      <header className="border-b border-border/70 bg-surface">
+      <header data-texture="" className="texture-grain bg-sala text-on-sala">
         {(me ? me.demo : isDemoPage()) ? (
-          <div role="note" className="bg-ink px-4 py-2 text-center text-sm font-medium leading-5 text-white">
+          <div role="note" className="bg-brass px-4 py-2 text-center text-sm font-semibold leading-5 text-sala">
             {t('staff.demo')}
           </div>
         ) : null}
         <div className="mx-auto max-w-[1280px] px-4 sm:px-6 lg:px-8">
           <div className="flex min-h-14 items-center justify-between gap-3 py-2 lg:min-h-16">
             <div className="min-w-0 flex-1 [overflow-wrap:break-word]">
-              <p className="text-base font-semibold leading-6 text-ink">
+              <p className="font-display text-[20px] font-medium leading-6 text-on-sala">
                 {t('app.name')}
-                <span className="hidden font-normal text-muted lg:inline"> · {t('staff.title')}</span>
+                <span className="hidden text-on-sala-muted lg:inline"> · {t('staff.title')}</span>
               </p>
-              <p className="text-sm leading-5 text-muted lg:hidden">
+              <p className="text-sm leading-5 text-on-sala-muted lg:hidden">
                 {/* "Equipo · Dueño" for owners; just "Equipo" for the staff role, not "Equipo · Equipo". */}
                 {me?.role === 'owner' ? `${t('staff.title')} · ${t('role.owner')}` : t('staff.title')}
               </p>
             </div>
             <div className={cn('flex shrink-0 items-center gap-1', me && 'hidden lg:flex')}>
-              <SiteLink />
-              <LangButton />
+              <SiteLink tone="sala" />
+              <LangButton tone="sala" />
               {me ? <AccountMenu me={me} /> : null}
             </div>
             {me ? (
@@ -389,7 +410,7 @@ function Routes() {
 function NotFoundStaff() {
   const {t} = useStaffT();
   return (
-    <h1 tabIndex={-1} className={cn(pageTitle, 'focus:outline-none')}>
+    <h1 tabIndex={-1} className={cn(workTitle, 'focus:outline-none')}>
       {t('notFound.title')}
     </h1>
   );
@@ -405,7 +426,7 @@ export default function StaffApp({path}: {path: string}) {
   if (query.state === 'error' && query.status === 403) {
     return (
       <Frame me={null}>
-        <h1 tabIndex={-1} className={cn(pageTitle, 'focus:outline-none')}>
+        <h1 tabIndex={-1} className={cn(workTitle, 'focus:outline-none')}>
           {t('staff.noAccess')}
         </h1>
         <p className="mt-3 text-base leading-6 text-ink">{t('staff.noAccessHelp')}</p>

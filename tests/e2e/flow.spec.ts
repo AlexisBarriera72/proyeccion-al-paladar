@@ -38,6 +38,10 @@ test('reserve a self-confirmable session: confirmed, with a link and a calendar 
   await page.getByRole('checkbox', {name: 'Acepto estas condiciones.'}).click();
   await page.getByRole('dialog').getByRole('button', {name: 'Reservar plazas'}).click();
   await expect(page.getByRole('heading', {name: 'Reservación confirmada'})).toBeVisible();
+  // The server confirmed it: the receipt is a ticket, and the popcorn bursts once.
+  await expect(page.getByRole('dialog').locator('[data-ticket]')).toHaveCount(1);
+  await expect(page.getByRole('dialog').locator('[data-popcorn]')).toHaveCount(1);
+  await expect(page.locator('[data-popcorn]')).toHaveAttribute('aria-hidden', 'true');
   await expect(
     page.getByText('No te enviamos ningún mensaje. Guarda este enlace para ver tu solicitud.'),
   ).toBeVisible();
@@ -58,9 +62,33 @@ test('request seats: received, never called confirmed, and the .ics is tentative
     page.getByText('Solicitud recibida. El equipo debe confirmar disponibilidad y condiciones.'),
   ).toBeVisible();
   await expect(page.getByRole('dialog')).not.toContainText(/confirmada|pagad|enviamos tu/i);
+  // A request holds no place: no ticket, and nothing to celebrate.
+  await expect(page.locator('[data-ticket]')).toHaveCount(0);
+  await expect(page.locator('[data-popcorn]')).toHaveCount(0);
   const content = await icsText(page);
   expect(content).toContain('STATUS:TENTATIVE');
   expect(content).toContain('SUMMARY:Solicitud pendiente:');
+});
+
+test('reduced motion: a confirmed reservation is still a ticket, with no popcorn', async ({browser}, info) => {
+  test.skip(info.project.name !== 'desktop', 'one run is enough to cover the setting');
+  const context = await browser.newContext({
+    reducedMotion: 'reduce',
+    viewport: info.project.use.viewport ?? undefined,
+    baseURL: 'http://127.0.0.1:8788',
+    locale: 'es-PR',
+    timezoneId: 'America/Puerto_Rico',
+  });
+  const page = await context.newPage();
+  await page.goto('/funciones/demo-prueba-a/');
+  await page.getByRole('button', {name: 'Reservar plazas'}).click();
+  await fillToReview(page, 'Cliente e2e sin movimiento');
+  await page.getByRole('checkbox', {name: 'Acepto estas condiciones.'}).click();
+  await page.getByRole('dialog').getByRole('button', {name: 'Reservar plazas'}).click();
+  await expect(page.getByRole('heading', {name: 'Reservación confirmada'})).toBeVisible();
+  await expect(page.getByRole('dialog').locator('[data-ticket]')).toHaveCount(1);
+  await expect(page.locator('[data-popcorn]')).toHaveCount(0);
+  await context.close();
 });
 
 test('a lost response is retried with the same key and saved once', async ({page}, info) => {

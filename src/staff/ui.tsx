@@ -21,7 +21,7 @@ import type {ApiResult} from '../lib/api.ts';
 import {useT} from '../lib/i18n.tsx';
 import {useEntry} from '../lib/motion.ts';
 import {formatShortDate, formatTime} from '../../shared/time.ts';
-import {helper, numbers, pageTitle, panel, rows, sectionTitle} from '../lib/styles.ts';
+import {helper, numbers, panel, rows, sectionTitle, workTitle} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button} from '../components/ui/button.tsx';
 import {Dialog} from '../components/ui/dialog.tsx';
@@ -125,7 +125,7 @@ export function PageHeader({
       {back ? <div className="-ml-3">{back}</div> : null}
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
         <div className="flex min-w-0 flex-col gap-2">
-          <h1 tabIndex={-1} className={cn(pageTitle, 'break-words focus:outline-none')}>
+          <h1 tabIndex={-1} className={cn(workTitle, 'break-words focus:outline-none')}>
             {title}
           </h1>
           {help ? <p className={helper}>{help}</p> : null}
