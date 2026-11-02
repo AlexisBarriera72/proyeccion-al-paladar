@@ -37,6 +37,7 @@ import {intOrNull, parseMoney, useQuery, useWrite} from './api.ts';
 import {
   BookingStatus,
   Callout,
+  CheckField,
   Confirm,
   ConfirmDialog,
   Demo,
@@ -64,6 +65,7 @@ import {
 import {BookingColumns, BookingRows, SessionPicker, useSessionOptions} from './rows.tsx';
 import {AuditRow} from './history.tsx';
 import {useMe, useRefreshCounts} from './me.ts';
+import {textLine} from './Door.tsx';
 import type {BookingData, StaffBookingRow} from './types.ts';
 
 const STATUSES = ['inquiry', 'pending_payment', 'confirmed', 'exception', 'cancelled', 'fulfilled', 'no_show'] as const;
@@ -88,7 +90,9 @@ export function BookingsList({entry}: {entry?: {sessionId: string | null}}) {
   if (q.trim()) query.set('q', q.trim());
   if (status !== 'all') query.set('status', status);
   if (sessionId) query.set('session', sessionId);
-  const {query: result, reload} = useQuery<{bookings: StaffBookingRow[]}>(`/api/equipo/bookings?${query}`);
+  const {query: result, reload} = useQuery<{bookings: StaffBookingRow[]; truncated?: boolean}>(
+    `/api/equipo/bookings?${query}`,
+  );
   const active = (status !== 'all' ? 1 : 0) + (sessionId ? 1 : 0);
   const clear = () => {
     setStatus('all');
@@ -189,9 +193,15 @@ export function BookingsList({entry}: {entry?: {sessionId: string | null}}) {
           ) : null}
         </div>
         <QueryView query={result} onRetry={() => void reload()}>
-          {({bookings}) =>
+          {({bookings, truncated}) =>
             bookings.length ? (
               <div>
+                {/* Upcoming first; a cut list says so, so nothing is silently missing. */}
+                {truncated ? (
+                  <p className={cn(helper, numbers, 'px-4 pb-3 sm:px-6')} role="status">
+                    {t('bk.listCut', {count: bookings.length})}
+                  </p>
+                ) : null}
                 <BookingColumns showSession />
                 <BookingRows bookings={bookings} showSession columns />
               </div>
@@ -279,6 +289,8 @@ const blankEntry = (sessionId: string | null) => ({
   contactValue: '',
   note: '',
   source: 'instagram_dm' as Source,
+  textConsent: false,
+  textLang: 'es' as 'es' | 'en',
 });
 
 /**
@@ -301,6 +313,7 @@ export function ManualEntrySheet({
   const formId = useId();
   const outcome = useOutcome();
   const {run, busy} = useWrite();
+  const me = useMe();
   const sessions = useSessionOptions(open);
   const [notice, setNotice] = useState<Notice>(null);
   const [form, setForm] = useState(() => blankEntry(sessionId));
@@ -342,6 +355,8 @@ export function ManualEntrySheet({
       contactValue: value,
       note: form.note.trim() || null,
       source: form.source,
+      textConsent: me.texts && form.contactKind === 'phone' && form.textConsent,
+      lang: form.textLang,
     });
     setNotice(outcome(result, t('bk.savedInquiry')));
     const id = result.kind === 'ok' ? (result.data.outcome as {id?: string} | null)?.id : null;
@@ -464,6 +479,29 @@ export function ManualEntrySheet({
           error={errors.contactValue}
           maxLength={120}
         />
+        {me.texts && form.contactKind === 'phone' ? (
+          <div className="flex flex-col gap-2">
+            <CheckField
+              id={`${ids}-text`}
+              label={t('bk.textConsent')}
+              checked={form.textConsent}
+              onChange={textConsent => set({textConsent})}
+            />
+            {form.textConsent ? (
+              <SelectField
+                id={`${ids}-text-lang`}
+                label={t('bk.textLang')}
+                value={form.textLang}
+                onChange={textLang => set({textLang})}
+                className="max-w-xs"
+                options={[
+                  {value: 'es', label: 'Español'},
+                  {value: 'en', label: 'English'},
+                ]}
+              />
+            ) : null}
+          </div>
+        ) : null}
         <TextField
           id={`${ids}-note`}
           label={t('bk.note')}
@@ -500,9 +538,10 @@ export function BookingPage({id}: {id: string}) {
   // A reissue whose answer was lost is retried with the same token (and so the same intent).
   const pendingToken = useRef<string | null>(null);
 
-  const openDialog = (next: BookingDialog) => {
+  // The resize field starts at the current size, and can then be cleared and retyped freely.
+  const openDialog = (next: BookingDialog, currentSize?: number) => {
     setDestination('');
-    setSize('');
+    setSize(currentSize === undefined ? '' : String(currentSize));
     setDialog(next);
   };
   const dialogProps = (name: BookingDialog) => ({
@@ -581,12 +620,20 @@ export function BookingPage({id}: {id: string}) {
             : b.unit_price_cents !== null && b.currency
               ? formatMoney(b.unit_price_cents, b.currency, lang)
               : null;
+        // The terms' share of what was paid, less what was already refunded: computed from the
+        // payments and refunds that stand (not reversed), never from the net, which a refund lowers.
+        const reversed = new Set(data.payments.map(p => p.reverses_payment_id).filter(Boolean));
+        const standing = (kind: 'payment' | 'refund') =>
+          data.payments.filter(p => p.kind === kind && !reversed.has(p.id)).reduce((sum, p) => sum + p.amount_cents, 0);
+        const refundRules =
+          status === 'cancelled' && data.lockedRules?.refundFractionBp != null && data.lockedRules.state !== 'draft'
+            ? data.lockedRules.refundFractionBp
+            : null;
+        const refundTotal = refundRules === null ? 0 : Math.floor((standing('payment') * refundRules) / 10000);
+        const refunded = standing('refund');
         const refundCalc =
-          status === 'cancelled' &&
-          b.net > 0 &&
-          data.lockedRules?.refundFractionBp != null &&
-          data.lockedRules.state !== 'draft'
-            ? Math.floor((b.net * data.lockedRules.refundFractionBp) / 10000)
+          refundRules !== null && refundTotal - refunded > 0
+            ? {total: refundTotal, refunded, due: refundTotal - refunded}
             : null;
         const sessionTitle = (sid: string) => sessions.list.find(s => s.id === sid)?.title_es ?? sid;
         const openRequests = data.requests.filter(r => r.status === 'open');
@@ -599,6 +646,11 @@ export function BookingPage({id}: {id: string}) {
               <span className="break-all">
                 {t(b.contact_kind === 'phone' ? 'bk.phone' : 'bk.email')}: {b.contact_value}
               </span>
+              {textLine(t, data.text) ? (
+                <span className={helper}>{textLine(t, data.text)}</span>
+              ) : b.wants_text ? (
+                <span className={helper}>{t('bk.textWanted')}</span>
+              ) : null}
               <Button variant="secondary" onClick={() => openDialog('reply')}>
                 <Pencil aria-hidden="true" />
                 {t('bk.buildReply')}
@@ -618,7 +670,7 @@ export function BookingPage({id}: {id: string}) {
 
         const more: MenuAction[] = [
           ...(status === 'confirmed'
-            ? [{key: 'resize', label: t('bk.resize'), icon: Users, onSelect: () => openDialog('resize')}]
+            ? [{key: 'resize', label: t('bk.resize'), icon: Users, onSelect: () => openDialog('resize', b.party_size)}]
             : []),
           ...(status === 'confirmed' || status === 'inquiry' || status === 'pending_payment'
             ? [{key: 'move', label: t('bk.move'), icon: ArrowRightLeft, onSelect: () => openDialog('move')}]
@@ -923,13 +975,7 @@ export function BookingPage({id}: {id: string}) {
               canSend={Boolean(intOrNull(size)) && intOrNull(size) !== b.party_size}
               onSend={() => act({action: 'resize', partySize: intOrNull(size)}, t('bk.done'))}
             >
-              <TextField
-                id={`${ids}-size`}
-                label={t('bk.party')}
-                inputMode="numeric"
-                value={size || String(b.party_size)}
-                onChange={setSize}
-              />
+              <TextField id={`${ids}-size`} label={t('bk.party')} inputMode="numeric" value={size} onChange={setSize} />
             </InputDialog>
             <InputDialog
               {...dialogProps('move')}
@@ -1037,6 +1083,7 @@ function EditBooking({
   busy: boolean;
 }) {
   const {t} = useStaffT();
+  const me = useMe();
   const ids = useId();
   const initial = () => ({
     partySize: String(booking.party_size),
@@ -1044,6 +1091,7 @@ function EditBooking({
     contactKind: booking.contact_kind,
     contactValue: booking.contact_value,
     note: booking.note ?? '',
+    textConsent: Boolean(booking.wants_text),
   });
   const [form, setForm] = useState(initial);
   useOnOpen(open, () => setForm(initial()));
@@ -1070,6 +1118,8 @@ function EditBooking({
             contactKind: form.contactKind,
             contactValue: form.contactValue.trim(),
             note: form.note.trim() || null,
+            // Kept only for a phone; the server keeps it only while texts are set up.
+            textConsent: form.contactKind === 'phone' && form.textConsent,
           },
           t('bk.done'),
         )
@@ -1104,6 +1154,14 @@ function EditBooking({
         value={form.contactValue}
         onChange={value => set({contactValue: value})}
       />
+      {me.texts && form.contactKind === 'phone' ? (
+        <CheckField
+          id={`${ids}-text`}
+          label={t('bk.textConsent')}
+          checked={form.textConsent}
+          onChange={textConsent => set({textConsent})}
+        />
+      ) : null}
       <TextField
         id={`${ids}-note`}
         label={t('bk.note')}
@@ -1134,7 +1192,7 @@ function Payments({
   onOpenChange: (open: boolean) => void;
   onRecorded: (notice: Notice) => void;
   seatsLeft: number | null;
-  refundCalc: number | null;
+  refundCalc: {total: number; refunded: number; due: number} | null;
 }) {
   const {t, lang} = useStaffT();
   const me = useMe();
@@ -1222,7 +1280,13 @@ function Payments({
         </p>
         {refundCalc !== null ? (
           <p className={cn('text-sm leading-5 text-ink', numbers)}>
-            {t('bk.calcRefund', {amount: formatMoney(refundCalc, 'USD', lang)})}
+            {refundCalc.refunded
+              ? t('bk.calcRefundRest', {
+                  total: formatMoney(refundCalc.total, 'USD', lang),
+                  refunded: formatMoney(refundCalc.refunded, 'USD', lang),
+                  due: formatMoney(refundCalc.due, 'USD', lang),
+                })
+              : t('bk.calcRefund', {amount: formatMoney(refundCalc.due, 'USD', lang)})}
           </p>
         ) : null}
       </div>

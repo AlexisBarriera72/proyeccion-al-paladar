@@ -13,18 +13,35 @@ const StaffApp = lazy(() => import('./staff/StaffApp.tsx'));
 const ManagePage = lazy(() => import('./public/ManagePage.tsx').then(module => ({default: module.ManagePage})));
 const PoliciesPage = lazy(() => import('./public/PoliciesPage.tsx').then(module => ({default: module.PoliciesPage})));
 
-/** After an in-app navigation, focus the new page's main heading so it is announced. */
-function useFocusOnNavigate(path: string) {
+const visible = (element: HTMLElement) =>
+  typeof element.checkVisibility === 'function' ? element.checkVisibility() : element.getClientRects().length > 0;
+
+/**
+ * After an in-app navigation, focus the new page's main heading so it is announced. It renders
+ * inside the page's Suspense boundary, so it runs once the page's code has loaded, and it waits a
+ * moment for a heading that appears after the page's data, unless the person moves focus first.
+ */
+function FocusOnNavigate({path}: {path: string}) {
   useEffect(() => {
     if (!hasNavigated()) return;
-    const frame = requestAnimationFrame(() => {
+    const start = document.activeElement;
+    let tries = 0;
+    let frame = 0;
+    const attempt = () => {
+      const moved = document.activeElement !== start && document.activeElement !== document.body;
+      if (moved) return;
       const main = document.getElementById('main');
-      const target =
-        main?.querySelector<HTMLElement>('[data-focus]') ?? main?.querySelector<HTMLElement>('h1') ?? main ?? null;
-      target?.focus({preventScroll: true});
-    });
+      const heading = [main?.querySelector<HTMLElement>('[data-focus]'), main?.querySelector<HTMLElement>('h1')].find(
+        (element): element is HTMLElement => Boolean(element && visible(element)),
+      );
+      if (heading) heading.focus({preventScroll: true});
+      else if (++tries < 120) frame = requestAnimationFrame(attempt);
+      else main?.focus({preventScroll: true});
+    };
+    frame = requestAnimationFrame(attempt);
     return () => cancelAnimationFrame(frame);
   }, [path]);
+  return null;
 }
 
 function StaffLoading() {
@@ -48,12 +65,12 @@ function PageLoading() {
 
 function Routes() {
   const {path} = useLocation();
-  useFocusOnNavigate(path);
 
   if (path === '/equipo' || path.startsWith('/equipo/')) {
     return (
       <Suspense fallback={<StaffLoading />}>
         <StaffApp path={path} />
+        <FocusOnNavigate key={path} path={path} />
       </Suspense>
     );
   }
@@ -68,7 +85,10 @@ function Routes() {
   else page = <NotFound />;
   return (
     <PageFrame>
-      <Suspense fallback={<PageLoading />}>{page}</Suspense>
+      <Suspense fallback={<PageLoading />}>
+        {page}
+        <FocusOnNavigate key={path} path={path} />
+      </Suspense>
     </PageFrame>
   );
 }

@@ -10,11 +10,16 @@ export type Query<T> =
 
 export function useQuery<T>(path: string | null) {
   const [query, setQuery] = useState<Query<T>>({state: 'loading'});
+  // Only the latest request may answer: a slower, older response (the month or the filter the
+  // person already left) never replaces a newer one.
+  const latest = useRef(0);
   const fetchNow = useCallback(
     async (quiet = false) => {
       if (!path) return;
+      const request = ++latest.current;
       if (!quiet) setQuery({state: 'loading'});
       const result = await getJson<T>(path);
+      if (request !== latest.current) return;
       setQuery(current => {
         if (result.kind === 'ok') return {state: 'ready', data: result.data};
         if (quiet && current.state === 'ready') return current;

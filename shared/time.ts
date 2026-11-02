@@ -47,6 +47,30 @@ export function prDateParts(ms: number): {year: number; month: number; day: numb
   return {year: get('year'), month: get('month'), day: get('day')};
 }
 
+/**
+ * "2026-11-07T20:15:00-04:00": an instant as Puerto Rico wall-clock time with its offset, for
+ * files people read (a spreadsheet shows the local day and time, not UTC's).
+ */
+export function prIsoLocal(ms: number): string {
+  const parts = fmt('en', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(ms);
+  const get = (type: string) => parts.find(part => part.type === type)?.value ?? '00';
+  // The offset from the same instant, so it stays right even if Puerto Rico ever changed its rules.
+  const local = Date.UTC(+get('year'), +get('month') - 1, +get('day'), +get('hour'), +get('minute'), +get('second'));
+  const offset = Math.round((local - Math.floor(ms / 1000) * 1000) / 60000);
+  const sign = offset < 0 ? '-' : '+';
+  const abs = Math.abs(offset);
+  const zone = `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}${zone}`;
+}
+
 /** "2026-10-11": the Puerto Rico date of an instant, for grouping and comparisons. */
 export function prDateKey(ms: number): string {
   const {year, month, day} = prDateParts(ms);

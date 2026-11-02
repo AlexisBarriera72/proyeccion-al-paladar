@@ -1,6 +1,6 @@
 // Loading sessions for the calendar: one request for everything from the start of this month
 // (a small list), with explicit loading, error and retry states.
-import {useCallback, useEffect, useState} from 'react';
+import {useCallback, useEffect, useRef, useState} from 'react';
 import {getJson} from '../lib/api.ts';
 import type {PublicSession} from '../../shared/types.ts';
 
@@ -8,10 +8,14 @@ export type Load<T> = {state: 'loading'} | {state: 'error'} | {state: 'ready'; d
 
 export function useSessions(from: number) {
   const [load, setLoad] = useState<Load<PublicSession[]>>({state: 'loading'});
+  // Only the latest request may answer: an older, slower response never overwrites a newer one.
+  const latest = useRef(0);
   const fetchAll = useCallback(
     async (quiet = false) => {
+      const request = ++latest.current;
       if (!quiet) setLoad({state: 'loading'});
       const result = await getJson<{sessions: PublicSession[]}>(`/api/public/sessions?from=${from}`);
+      if (request !== latest.current) return;
       setLoad(current =>
         result.kind === 'ok'
           ? {state: 'ready', data: result.data.sessions}

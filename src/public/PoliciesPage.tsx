@@ -16,7 +16,13 @@ import {Disclosure} from '../components/ui/disclosure.tsx';
 import {PageBand, PageSheet} from '../components/Band.tsx';
 import {PolicyBlock} from './SessionDetail.tsx';
 
-type Policies = {current: PublicPolicy[]; earlier: PublicPolicy[]; announced: PublicPolicy[]};
+type Policies = {
+  current: PublicPolicy[];
+  // Approved terms that start later: listed apart, never as in force.
+  upcoming?: PublicPolicy[];
+  earlier: PublicPolicy[];
+  announced: PublicPolicy[];
+};
 type Load = {state: 'loading'} | {state: 'error'} | {state: 'ready'; data: Policies};
 
 function Section({id, title, children}: {id: string; title: string; children: React.ReactNode}) {
@@ -65,6 +71,7 @@ export function PoliciesPage() {
     );
   } else {
     const {current, earlier, announced} = load.data;
+    const upcoming = load.data.upcoming ?? [];
     body = (
       <>
         {current.length ? (
@@ -95,6 +102,20 @@ export function PoliciesPage() {
             {t('policies.none')}
           </motion.p>
         )}
+        {upcoming.length ? (
+          <motion.div variants={entry.item}>
+            <Section id="policies-upcoming" title={t('policies.upcoming')}>
+              {upcoming.map(policy => (
+                <article
+                  key={policy.id}
+                  className="space-y-2 border-t border-border/70 pt-4 first:border-t-0 first:pt-0"
+                >
+                  <PolicyBlock policy={policy} quoteOpen />
+                </article>
+              ))}
+            </Section>
+          </motion.div>
+        ) : null}
         {earlier.length ? (
           <motion.div variants={entry.item}>
             <Section id="policies-earlier" title={t('policies.earlier')}>

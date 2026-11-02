@@ -14,7 +14,7 @@ import {readJson, remove, writeJson} from '../lib/storage.ts';
 import {formatMoney, pick} from '../lib/format.ts';
 import {useEntry} from '../lib/motion.ts';
 import {Link} from '../lib/router.tsx';
-import {helper, numbers, pageTitle, panel, sectionTitle} from '../lib/styles.ts';
+import {doorNumber, helper, inset, kicker, numbers, pageTitle, panel, sectionTitle} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
 import {Dialog} from '../components/ui/dialog.tsx';
@@ -324,7 +324,7 @@ export function ManagePage({token}: {token: string}) {
   const kindId = `${ids}-kind`;
   const detailsId = `${ids}-details`;
   const askForm = `${ids}-ask-form`;
-  const hasExport = b.session.startsAt !== null && b.status !== 'cancelled';
+  const hasExport = b.session.startsAt !== null && b.status !== 'cancelled' && b.status !== 'no_show';
 
   return (
     <motion.div variants={entry.page} initial="hidden" animate="show">
@@ -371,6 +371,21 @@ export function ManagePage({token}: {token: string}) {
                 <BookingStatus status={b.status} />
                 <p className="text-base leading-6 text-ink">{t(`bhelp.${b.status}`)}</p>
               </div>
+              {b.status === 'confirmed' ? (
+                // The number the door asks for, large, with what we know about the text that carried it.
+                <div className={cn(inset, 'space-y-1')} data-door-number="">
+                  <p className={cn(kicker, 'text-accent')}>{t('result.doorNumber')}</p>
+                  <p className={cn(doorNumber, 'text-ink')}>{b.reference}</p>
+                  <p className="text-sm font-medium leading-5 text-ink">{t('result.doorHelp')}</p>
+                  {b.text?.status === 'sent' ? (
+                    <p className={helper}>{t('manage.textSent', {to: b.text.to})}</p>
+                  ) : b.text?.status === 'failed' ? (
+                    <p className={helper}>{t('manage.textFailed', {to: b.text.to})}</p>
+                  ) : b.text?.status === 'unknown' ? (
+                    <p className={helper}>{t('manage.textUnknown', {to: b.text.to})}</p>
+                  ) : null}
+                </div>
+              ) : null}
               <div role="status" aria-live="polite">
                 {notice ? <NoticeText notice={notice} /> : null}
               </div>

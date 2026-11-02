@@ -4,6 +4,7 @@
 import {raw, sql, type Sql} from './sql.ts';
 import {all, first, type Db} from './db.ts';
 import {allOf, confirmable, confirmedSeats, net} from './rules.ts';
+import {latestText} from './texts.ts';
 import type {
   Availability,
   BookingStatus,
@@ -108,11 +109,13 @@ const lines = (text: string | null) =>
 export function toPublicSession(row: SessionRow, now: number, policy: PolicyRow | undefined): PublicSession {
   const remainingRaw = row.capacity === null ? null : row.capacity - row.blocked_seats - row.seats_taken;
   const realInventory = row.capacity !== null && row.booking_mode === 'confirmed';
+  // Sold out once no group the session allows still fits, not only at zero seats.
+  const noRoom = remainingRaw !== null && remainingRaw < (row.party_min ?? 1);
   let availability: Availability;
   if (row.state === 'cancelled') availability = 'cancelled';
-  else if (row.starts_at === null) availability = 'date_tbd';
+  else if (row.starts_at === null) availability = noRoom ? 'sold_out' : 'date_tbd';
   else if (row.starts_at <= now) availability = 'past';
-  else if (remainingRaw !== null && remainingRaw <= 0) availability = 'sold_out';
+  else if (noRoom) availability = 'sold_out';
   else if (realInventory && row.low_seats_threshold !== null && remainingRaw! <= row.low_seats_threshold) {
     availability = 'few_left';
   } else availability = 'available';
@@ -190,22 +193,29 @@ export async function publicSession(db: Db, now: number, id: string, anyState = 
 export async function publicPolicies(
   db: Db,
   now: number,
-): Promise<{current: PublicPolicy[]; earlier: PublicPolicy[]; announced: PublicPolicy[]}> {
+): Promise<{current: PublicPolicy[]; upcoming: PublicPolicy[]; earlier: PublicPolicy[]; announced: PublicPolicy[]}> {
   const rows = await all<PolicyRow>(
     db,
     sql`SELECT * FROM policy_versions ORDER BY COALESCE(effective_from, created_at) DESC`,
   );
-  // In force: approved and not past its end date. Approved terms that have ended are listed with
-  // the earlier versions, as the rules no longer apply them to any booking.
+  // In force: approved, already started and not past its end date. Approved terms that start later
+  // are listed apart; those that have ended go with the earlier versions, as the rules no longer
+  // apply them to any booking.
   const ended = (row: PolicyRow) => row.effective_until !== null && row.effective_until <= now;
-  const approved = rows.filter(row => row.state === 'approved' && !ended(row)).map(row => toPublicPolicy(row)!);
+  const later = (row: PolicyRow) => row.effective_from !== null && row.effective_from > now;
+  const live = rows.filter(row => row.state === 'approved' && !ended(row));
+  const current = live.filter(row => !later(row)).map(row => toPublicPolicy(row)!);
+  const upcoming = live
+    .filter(later)
+    .reverse() // soonest first
+    .map(row => toPublicPolicy(row)!);
   const earlier = rows
     .filter(row => row.state === 'retired' || (row.state === 'approved' && ended(row)))
     .map(row => ({...toPublicPolicy({...row, state: 'approved'})!, state: 'approved' as const}));
   const announced = rows
     .filter(row => row.state === 'draft' && row.public_announcement)
     .map(row => toPublicPolicy(row)!);
-  return {current: approved, earlier, announced};
+  return {current, upcoming, earlier, announced};
 }
 
 interface BookingRow {
@@ -247,7 +257,9 @@ export async function manageView(db: Db, now: number, tokenDigest: string): Prom
     created_at: number;
   }>(
     db,
-    sql`SELECT * FROM term_proposals WHERE booking_id = ${booking.id} AND status = 'open' ORDER BY created_at DESC`,
+    // Only an active booking can accept new terms.
+    sql`SELECT * FROM term_proposals WHERE booking_id = ${booking.id} AND status = 'open'
+      AND ${booking.status} IN ('inquiry', 'pending_payment', 'confirmed', 'exception') ORDER BY created_at DESC`,
   );
   const proposalViews = [];
   for (const proposal of proposals) {
@@ -295,5 +307,6 @@ export async function manageView(db: Db, now: number, tokenDigest: string): Prom
     proposals: proposalViews,
     openRequests: openRequests.map(request => ({id: request.id, kind: request.kind, createdAt: request.created_at})),
     canWithdraw: ['inquiry', 'pending_payment'].includes(booking.status) && booking.net === 0,
+    text: await latestText(db, booking.id),
   };
 }

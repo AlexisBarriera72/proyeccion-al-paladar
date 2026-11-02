@@ -14,6 +14,10 @@ export const kicker = 'text-xs font-semibold uppercase leading-4 tracking-[0.14e
 export const motto = 'font-display text-[24px] italic leading-[1.25] md:text-[28px]';
 
 export const helper = 'text-sm leading-5 text-muted';
+// The booking number guests show at the door: title sizes from the scale, in lining figures. It
+// stays on one line where it fits; on the narrowest phones it can break only after "PAP-".
+export const doorNumber =
+  'font-display text-[28px] min-[380px]:text-[32px] sm:text-[40px] font-semibold leading-[1.1] tracking-[0.02em] tabular-nums lining-nums break-words';
 // Lining, equal-width figures: Fraunces would otherwise draw old-style numbers.
 export const numbers = 'tabular-nums lining-nums tracking-[-0.01em]';
 export const workspace = 'grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-8';

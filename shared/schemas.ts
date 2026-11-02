@@ -52,6 +52,9 @@ export const createBookingSchema = z
     token: z.string().regex(TOKEN),
     terms: termsSchema.nullable(),
     acceptedTerms: z.boolean(),
+    // The guest asked for their number by text (phone contacts only; used only when texts are on).
+    textConsent: z.boolean().default(false),
+    lang: z.enum(['es', 'en']).default('es'),
   })
   .refine(contactValid, {
     message: 'contact_invalid',
@@ -110,6 +113,9 @@ export const sessionStateSchema = z.object({
   transition: z.enum(['publish', 'unpublish', 'cancel', 'archive']),
 });
 
+// The guest agreed to get their number by text once confirmed (used only for a phone, with texts on).
+const textConsent = z.boolean().default(false);
+
 export const manualBookingSchema = z
   .object({
     sessionId: id,
@@ -119,11 +125,34 @@ export const manualBookingSchema = z
     contactValue,
     note: optionalText(280),
     source: z.enum(['instagram_dm', 'phone', 'in_person', 'other']),
+    textConsent,
+    lang: z.enum(['es', 'en']).default('es'),
   })
   .refine(contactValid, {
     message: 'contact_invalid',
     path: ['contactValue'],
   });
+
+/** A guest who arrives without a reservation and accepts, in person, the terms staff showed them. */
+export const walkInSchema = z
+  .object({
+    sessionId: id,
+    partySize: z.number().int().min(1).max(60),
+    leadName,
+    contactKind: z.enum(['phone', 'email']),
+    contactValue,
+    note: optionalText(280),
+    terms: termsSchema,
+    acceptedTerms: z.boolean(),
+    textConsent,
+    lang: z.enum(['es', 'en']).default('es'),
+  })
+  .refine(contactValid, {
+    message: 'contact_invalid',
+    path: ['contactValue'],
+  })
+  .refine(b => b.acceptedTerms, {message: 'terms_required', path: ['acceptedTerms']});
+export type WalkInBody = z.infer<typeof walkInSchema>;
 
 const versioned = {expectedVersion: z.number().int().min(1)};
 export const bookingActionSchema = z
@@ -148,6 +177,7 @@ export const bookingActionSchema = z
       contactKind: z.enum(['phone', 'email']),
       contactValue,
       note: optionalText(280),
+      textConsent,
     }),
   ])
   .superRefine((body, ctx) => {

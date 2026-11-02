@@ -6,9 +6,11 @@ import {spawn, spawnSync, type ChildProcess} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {demoSeed, seedSqlFile} from '../../worker/seed.ts';
 
-const ROOT = path.resolve(new URL('../..', import.meta.url).pathname);
+// fileURLToPath decodes the URL, so a folder with spaces or accents ("Proyección al Paladar") works.
+const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const WRANGLER = path.join(ROOT, 'node_modules', '.bin', 'wrangler');
 export const TEST_OWNER = 'owner@example.com';
 export const TEST_STAFF = 'staff@example.com';
@@ -18,7 +20,8 @@ const quiet = {...process.env, WRANGLER_SEND_METRICS: 'false', CI: '1', NO_COLOR
 export function wranglerSync(args: string[]): string {
   const result = spawnSync(WRANGLER, args, {cwd: ROOT, env: quiet, encoding: 'utf8'});
   if (result.status !== 0) {
-    throw new Error(`wrangler ${args.join(' ')} failed:\n${result.stdout}\n${result.stderr}`);
+    const reason = result.error ? `${result.error.message}\n` : '';
+    throw new Error(`wrangler ${args.join(' ')} failed:\n${reason}${result.stdout ?? ''}\n${result.stderr ?? ''}`);
   }
   return result.stdout;
 }
@@ -55,9 +58,20 @@ export function prepareLocalDb(persistTo: string, options: {seed?: boolean; now?
   wranglerSync(['d1', 'execute', 'pap-local', ...local, '--file', file]);
 }
 
-export function startWrangler(persistTo: string, port: number, testSwitches: boolean): ChildProcess {
+/**
+ * `wrangler dev --env local`. `fakeTexts` turns on the local stand-in for the text provider (it
+ * sends nothing): only the browser and release tests use it, so `npm run dev` never claims a text
+ * went out.
+ */
+export function startWrangler(
+  persistTo: string,
+  port: number,
+  testSwitches: boolean,
+  options: {fakeTexts?: boolean} = {},
+): ChildProcess {
   const args = ['dev', '--env', 'local', '--persist-to', persistTo, '--port', String(port), '--ip', '127.0.0.1'];
   if (testSwitches) args.push('--var', 'TEST_AUTH:1', '--var', 'TEST_CLOCK:1');
+  if (options.fakeTexts) args.push('--var', 'TEXT_FAKE:1');
   const child = spawn(WRANGLER, args, {cwd: ROOT, env: quiet, stdio: 'inherit'});
   const stop = () => child.kill('SIGTERM');
   process.on('exit', stop);

@@ -11,6 +11,7 @@ import {
   confirmable,
   confirmedSeats,
   createInquiry,
+  createWalkIn,
   editRequest,
   markOutcome,
   moveConfirmed,
@@ -39,8 +40,9 @@ import {
   type SessionFields,
 } from './admin-rules.ts';
 import {demoSeed} from './seed.ts';
+import {deliverTexts, latestText, textsOn, toE164} from './texts.ts';
 import {sessionSelect, toPublicPolicy} from './views.ts';
-import {prDayBounds} from '../shared/time.ts';
+import {prDayBounds, prIsoLocal} from '../shared/time.ts';
 import {
   bookingActionSchema,
   experienceSchema,
@@ -54,6 +56,7 @@ import {
   settingSchema,
   staffMemberSchema,
   venueSchema,
+  walkInSchema,
 } from '../shared/schemas.ts';
 import type {Env} from './env.ts';
 import type {StaffIdentity} from './access.ts';
@@ -66,6 +69,7 @@ interface Context {
 }
 
 const ownerOnly = () => error('owner_only', 403);
+const LIST_LIMIT = 500;
 
 function invalid(issues: {message: string; path: PropertyKey[]}[]) {
   const issue = issues[0];
@@ -78,7 +82,17 @@ const BOOKING_COLUMNS =
   raw(`b.id, b.reference, b.session_id, b.party_size, b.lead_name, b.contact_kind, b.contact_value,
   b.note, b.status, b.exception_reason, b.source, b.checked_in_at, b.version, b.synthetic, b.created_at, b.updated_at,
   b.accepted_policy_version_id, b.accepted_at, b.terms_price_status, b.unit_price_cents, b.currency,
-  (b.token_digest IS NOT NULL) AS has_link`);
+  (b.token_digest IS NOT NULL) AS has_link, (b.text_to IS NOT NULL) AS wants_text, b.lang`);
+
+/**
+ * Where to text a booking's number: only when the guest agreed, gave a phone that can take a
+ * text, and texts are set up. `refused` says the guest agreed but the number can't take one.
+ */
+function textTarget(env: Env, consent: boolean, kind: 'phone' | 'email', value: string) {
+  const wanted = consent && kind === 'phone' && textsOn(env);
+  const to = wanted ? toE164(value) : null;
+  return {to, refused: wanted && to === null};
+}
 
 /** Each publishing check and each confirmable part for one session: {code, ok}. */
 async function checklist(db: Db, now: number, sessionId: string) {
@@ -144,6 +158,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
         demo: ctx.env.DEMO_MODE === '1',
         environment: ctx.env.APP_ENV,
         now,
+        texts: textsOn(ctx.env),
       });
     }
 
@@ -194,14 +209,19 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
         );
       }
       const where = filters.length ? sql`WHERE ${and(filters)}` : raw('');
-      return json({
-        bookings: await all(
-          db,
-          sql`SELECT ${BOOKING_COLUMNS}, ${net('b')} AS net, s.starts_at, e.title_es
-            FROM bookings AS b JOIN sessions AS s ON s.id = b.session_id JOIN experiences AS e ON e.id = s.experience_id
-            ${where} ORDER BY s.starts_at IS NULL, s.starts_at, b.created_at LIMIT 500`,
-        ),
-      });
+      // Today and later first (soonest first, undated last), then earlier dates (latest first), so
+      // the cap never hides what is coming up. One extra row says whether the list was cut.
+      const [dayStart] = prDayBounds(now);
+      const rows = await all(
+        db,
+        sql`SELECT ${BOOKING_COLUMNS}, ${net('b')} AS net, s.starts_at, e.title_es
+          FROM bookings AS b JOIN sessions AS s ON s.id = b.session_id JOIN experiences AS e ON e.id = s.experience_id
+          ${where}
+          ORDER BY (s.starts_at IS NOT NULL AND s.starts_at < ${dayStart}), s.starts_at IS NULL,
+            CASE WHEN s.starts_at >= ${dayStart} THEN s.starts_at END, s.starts_at DESC, b.created_at
+          LIMIT ${LIST_LIMIT + 1}`,
+      );
+      return json({bookings: rows.slice(0, LIST_LIMIT), truncated: rows.length > LIST_LIMIT});
     }
 
     if (path === '/api/equipo/bookings/duplicates') {
@@ -226,7 +246,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
         sql`SELECT ${BOOKING_COLUMNS}, ${net('b')} AS net FROM bookings AS b WHERE b.id = ${id}`,
       );
       if (!row) return error('not_found', 404);
-      const [sessionRow, payments, acceptances, proposals, requests, audit] = await Promise.all([
+      const [sessionRow, payments, acceptances, proposals, requests, audit, text] = await Promise.all([
         first(db, sql`${sessionSelect(now)} WHERE s.id = ${row.session_id as string}`),
         all(db, sql`SELECT * FROM payments WHERE booking_id = ${id} ORDER BY recorded_at, rowid`),
         all(db, sql`SELECT * FROM term_acceptances WHERE booking_id = ${id} ORDER BY accepted_at, rowid`),
@@ -237,6 +257,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
           sql`SELECT * FROM audit_events WHERE (target_type = 'booking' AND target_id = ${id})
             OR json_extract(after_json, '$.id') = ${id} ORDER BY at, rowid`,
         ),
+        latestText(db, id),
       ]);
       const lockedRow = row.accepted_policy_version_id
         ? await first<Record<string, unknown>>(
@@ -264,6 +285,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
         audit,
         lockedPolicy: locked,
         lockedRules,
+        text,
       });
     }
 
@@ -289,22 +311,53 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
     }
 
     if (path === '/api/equipo/tonight') {
+      // Today's bookings in every status but cancelled, so the door can find any guest by number,
+      // name or phone; and today's open sessions, for guests who arrive without a reservation.
       const [start, end] = prDayBounds(now);
-      return json({
-        bookings: await all(
+      const [bookings, sessionRows] = await Promise.all([
+        all(
           db,
-          sql`SELECT ${BOOKING_COLUMNS}, s.starts_at, e.title_es FROM bookings AS b
+          sql`SELECT ${BOOKING_COLUMNS}, ${net('b')} AS net, s.starts_at, e.title_es FROM bookings AS b
             JOIN sessions AS s ON s.id = b.session_id JOIN experiences AS e ON e.id = s.experience_id
-            WHERE b.status IN ('confirmed', 'fulfilled', 'no_show') AND s.starts_at >= ${start} AND s.starts_at < ${end}
+            WHERE b.status <> 'cancelled' AND s.starts_at >= ${start} AND s.starts_at < ${end}
             ORDER BY s.starts_at, b.lead_name`,
         ),
-        dayStart: start,
-      });
+        all<Record<string, unknown> & {id: string; policy_version_id: string | null}>(
+          db,
+          sql`SELECT s.id, s.version, s.starts_at, s.state, s.capacity, s.blocked_seats, s.party_min, s.party_max,
+              s.price_status, s.price_cents, s.currency, s.policy_version_id, s.synthetic, e.title_es, e.title_en,
+              ${confirmedSeats('s')} AS seats_taken
+            FROM sessions AS s JOIN experiences AS e ON e.id = s.experience_id
+            WHERE s.state = 'published' AND s.starts_at >= ${start} AND s.starts_at < ${end} ORDER BY s.starts_at`,
+        ),
+      ]);
+      const sessions = [];
+      for (const row of sessionRows) {
+        const {confirmable: parts} = await checklist(db, now, row.id);
+        const policyRow = row.policy_version_id
+          ? await first<Record<string, unknown>>(
+              db,
+              sql`SELECT * FROM policy_versions WHERE id = ${row.policy_version_id}`,
+            )
+          : null;
+        sessions.push({
+          ...row,
+          // What the server will check again: shown so staff know before they ask the guest.
+          missing: parts.filter(part => !part.ok).map(part => part.code),
+          policy: toPublicPolicy(policyRow as never),
+          fullPayment: policyRow ? policyRow.full_payment : null,
+        });
+      }
+      return json({bookings, sessions, dayStart: start});
     }
 
     if (path === '/api/equipo/audit') {
       const limit = Math.min(Number(url.searchParams.get('limit')) || 200, 500);
-      return json({events: await all(db, sql`SELECT * FROM audit_events ORDER BY at DESC, rowid DESC LIMIT ${limit}`)});
+      // The team list (emails and roles) is the owners' to see, here as in the catalog.
+      const scope = isOwner ? raw('') : raw(`WHERE target_type <> 'staff'`);
+      return json({
+        events: await all(db, sql`SELECT * FROM audit_events ${scope} ORDER BY at DESC, rowid DESC LIMIT ${limit}`),
+      });
     }
 
     if (path === '/api/equipo/export.csv') {
@@ -334,7 +387,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
           row.lead_name,
           row.party_size,
           row.status,
-          row.checked_in_at ? new Date(row.checked_in_at as number).toISOString() : '',
+          row.checked_in_at ? prIsoLocal(row.checked_in_at as number) : '',
           row.contact_kind,
           row.contact_value,
           row.source,
@@ -440,6 +493,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
     const parsed = manualBookingSchema.safeParse(body.value);
     if (!parsed.success) return invalid(parsed.error.issues);
     const b = parsed.data;
+    const text = textTarget(ctx.env, b.textConsent, b.contactKind, b.contactValue);
     const input = {
       bookingId: crypto.randomUUID(),
       reference: newReference(),
@@ -453,18 +507,61 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
       tokenDigest: null,
       mutationId,
       now,
+      textTo: text.to,
+      lang: b.lang,
     };
-    return answer(
-      await write({
-        ...base,
-        action: 'create_inquiry',
-        targetType: 'session',
-        targetId: b.sessionId,
-        expectedVersion: null,
-        payload: b,
-        makeSpec: mid => createInquiry({...input, mutationId: mid}, true),
-      }),
-    );
+    const result = await write({
+      ...base,
+      action: 'create_inquiry',
+      targetType: 'session',
+      targetId: b.sessionId,
+      expectedVersion: null,
+      payload: b,
+      makeSpec: mid => createInquiry({...input, mutationId: mid}, true),
+    });
+    return answer(result, {textNumberRefused: text.refused});
+  }
+
+  if (path === '/api/equipo/walk-ins') {
+    // A guest at the door without a reservation: a booking number on the spot, if seats remain.
+    const parsed = walkInSchema.safeParse(body.value);
+    if (!parsed.success) return invalid(parsed.error.issues);
+    const b = parsed.data;
+    const text = textTarget(ctx.env, b.textConsent, b.contactKind, b.contactValue);
+    const [dayStart, dayEnd] = prDayBounds(now);
+    const input = {
+      bookingId: crypto.randomUUID(),
+      reference: newReference(),
+      sessionId: b.sessionId,
+      partySize: b.partySize,
+      leadName: b.leadName,
+      contactKind: b.contactKind,
+      contactValue: b.contactValue,
+      note: b.note,
+      source: 'in_person' as const,
+      tokenDigest: null,
+      mutationId,
+      now,
+      textTo: text.to,
+      lang: b.lang,
+      dayStart,
+      dayEnd,
+    };
+    const result = await write({
+      ...base,
+      action: 'walk_in',
+      targetType: 'session',
+      targetId: b.sessionId,
+      expectedVersion: null,
+      payload: b,
+      makeSpec: mid => createWalkIn({...input, mutationId: mid}, b.terms),
+    });
+    if (result.kind !== 'applied') return answer(result);
+    const outcome = result.outcome as {id: string};
+    return answer(result, {
+      text: await deliverTexts(db, ctx.env, now, outcome.id),
+      textNumberRefused: text.refused,
+    });
   }
 
   const bookingAction = /^\/api\/equipo\/bookings\/([A-Za-z0-9_:-]{1,80})\/(actions|payments)$/.exec(path);
@@ -511,6 +608,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
     if (!current) return error('not_found', 404);
     const common = {id, expectedVersion: a.expectedVersion, now};
     let makeSpec;
+    let textRefused = false;
     switch (a.action) {
       case 'confirm':
         makeSpec = (mid: string) => confirm({...common, mutationId: mid});
@@ -564,6 +662,9 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
       }
       case 'edit': {
         const status = current.status === 'pending_payment' ? 'pending_payment' : 'inquiry';
+        const text = textTarget(ctx.env, a.textConsent, a.contactKind, a.contactValue);
+        textRefused = text.refused;
+        const textTo = text.to;
         makeSpec = (mid: string) =>
           editRequest({
             ...common,
@@ -575,6 +676,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
             contactKind: a.contactKind,
             contactValue: a.contactValue,
             note: a.note,
+            textTo,
           });
         break;
       }
@@ -582,9 +684,18 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
     const {expectedVersion, action, ...rest} = a;
     // The token itself never enters the ledger; its digest does (through the payload hash).
     const payload = action === 'reissue_link' ? {digest: await sha256Hex((rest as {token: string}).token)} : rest;
-    return answer(
-      await write({...base, action, targetType: 'booking', targetId: id, expectedVersion, payload, makeSpec}),
-    );
+    const result = await write({
+      ...base,
+      action,
+      targetType: 'booking',
+      targetId: id,
+      expectedVersion,
+      payload,
+      makeSpec,
+    });
+    if (result.kind !== 'applied') return answer(result);
+    // A write that confirmed the booking may have queued its number by text: send it now.
+    return answer(result, {text: await deliverTexts(db, ctx.env, now, id), textNumberRefused: textRefused});
   }
 
   const requestResolve = /^\/api\/equipo\/requests\/([A-Za-z0-9_:-]{1,80})\/resolve$/.exec(path);

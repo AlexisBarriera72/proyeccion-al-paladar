@@ -1,4 +1,5 @@
-// Brief §13.10: axe on every page, the open reservation dialog, a staff menu and the guest's request sheet, keyboard use, text
+// Brief §13.10: axe on every page, the open reservation dialog, a staff menu, Recepción and its walk-in sheet, and the
+// guest's request sheet, keyboard use, text
 // spacing (WCAG 1.4.12) and 200% zoom without horizontal scrolling.
 import {expect, test} from '@playwright/test';
 import {randomBytes, randomUUID} from 'node:crypto';
@@ -52,6 +53,23 @@ test('axe finds nothing on a staff booking page or in its open "Más acciones" m
   await expect(page.getByRole('menu')).toBeVisible();
   const inMenu = await new AxeBuilder({page}).analyze();
   expect(inMenu.violations.map(v => `${v.id}: ${v.nodes.map(n => n.target.join(' ')).join(', ')}`)).toEqual([]);
+});
+
+test('axe finds nothing on Esta noche with Recepción results, or in the open walk-in sheet', async ({page}) => {
+  // On the demo test session's own day, so tonight's list, the search and the sheet have content.
+  const {session} = await (await page.request.get('/api/public/sessions/demo-prueba-a')).json();
+  await page.setExtraHTTPHeaders({...OWNER, 'x-test-now': String(session.startsAt - 2 * 60 * 60 * 1000)});
+  await page.goto('/equipo/esta-noche/');
+  await page.getByRole('searchbox', {name: 'Número, nombre o teléfono'}).fill('cliente de prueba');
+  await expect(page.getByText('2 resultados')).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  const onPage = await new AxeBuilder({page}).analyze();
+  expect(onPage.violations.map(v => `${v.id}: ${v.nodes.map(n => n.target.join(' ')).join(', ')}`)).toEqual([]);
+  await page.getByRole('button', {name: 'Llegó sin reservación'}).first().click();
+  await expect(page.getByRole('dialog', {name: 'Llegada sin reservación'})).toBeVisible();
+  await page.waitForTimeout(400);
+  const inSheet = await new AxeBuilder({page}).include('[role="dialog"]').analyze();
+  expect(inSheet.violations.map(v => `${v.id}: ${v.nodes.map(n => n.target.join(' ')).join(', ')}`)).toEqual([]);
 });
 
 test('axe finds nothing on the guest page or in its request sheet', async ({page}, info) => {

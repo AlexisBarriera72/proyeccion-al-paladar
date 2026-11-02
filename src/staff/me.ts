@@ -6,6 +6,8 @@ export interface Me {
   demo: boolean;
   environment: string;
   now: number;
+  /** An SMS provider is set up, so a guest's number can be texted when it is confirmed. */
+  texts: boolean;
 }
 
 export const MeContext = createContext<Me | null>(null);

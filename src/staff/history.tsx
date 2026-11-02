@@ -49,6 +49,10 @@ const ACTION_KEYS: Record<string, string> = {
   setting_set: 'hist.action.setting_set',
   staff_save: 'hist.action.staff_save',
   demo_reset: 'hist.action.demo_reset',
+  walk_in: 'hist.action.walk_in',
+  text_claim: 'hist.action.text_claim',
+  text_result: 'hist.action.text_result',
+  text_skip: 'hist.action.text_skip',
 };
 
 const FIELD_KEYS: Record<string, string> = {
@@ -67,6 +71,12 @@ const FIELD_KEYS: Record<string, string> = {
   policyVersionId: 'ses.policy',
   reference: 'bk.reference',
   exceptionReason: 'hist.reason',
+  leadName: 'bk.lead',
+  contactKind: 'hist.contactKind',
+  contactValue: 'bk.contact',
+  note: 'bk.note',
+  textTo: 'hist.textTo',
+  providerId: 'hist.providerId',
   kind: 'bk.kind',
   email: 'team.email',
   role: 'team.role',
@@ -75,20 +85,37 @@ const FIELD_KEYS: Record<string, string> = {
 
 export const actionLabel = (t: T, code: string) => (ACTION_KEYS[code] ? t(ACTION_KEYS[code]) : code);
 
+/**
+ * An event's label. A "Confirmar" that found money but no seats moved the booking to Excepciones
+ * instead of confirming it, and says so.
+ */
+function eventLabel(t: T, event: AuditEvent): string {
+  if (event.action === 'confirm' && parse(event.after_json)?.status === 'exception') {
+    return t('hist.action.confirmToException');
+  }
+  return actionLabel(t, event.action);
+}
+
 export type HistoryType = 'bookings' | 'sessions' | 'payments' | 'settings';
 
 /** Which "Tipo" filter an event belongs to, from its own action and target. */
 /** Who did it, as staff read it: "Cliente" for the guest's own page, the email for staff. */
 function actorName(actor: string, t: (key: string) => string): string {
   if (actor === 'guest') return t('hist.actorGuest');
+  if (actor === 'system') return t('hist.actorSystem');
   return actor.startsWith('staff:') ? actor.slice('staff:'.length) : actor;
 }
 
 export function historyType(event: AuditEvent): HistoryType {
   if (event.action === 'record_payment') return 'payments';
   // A new reservation or request is recorded against its session, but staff look for it under Reservaciones.
-  if (event.action === 'create_reservation' || event.action === 'create_inquiry') return 'bookings';
-  if (event.target_type === 'booking' || event.target_type === 'request') return 'bookings';
+  if (event.action === 'create_reservation' || event.action === 'create_inquiry' || event.action === 'walk_in') {
+    return 'bookings';
+  }
+  // A text with a booking number belongs with its booking.
+  if (event.target_type === 'booking' || event.target_type === 'request' || event.target_type === 'message') {
+    return 'bookings';
+  }
   if (event.target_type === 'session') return 'sessions';
   return 'settings';
 }
@@ -119,6 +146,11 @@ function show(field: string, value: unknown, t: T, lang: Lang): string {
     const key = `ses.state.${value}`;
     return t(key) === key ? value : t(key);
   }
+  if (typeof value === 'string' && field === 'exceptionReason') {
+    const key = `reason.${value}`;
+    return t(key) === key ? value : t(key);
+  }
+  if (typeof value === 'string' && field === 'contactKind') return value === 'phone' ? t('bk.phone') : t('bk.email');
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
@@ -203,7 +235,7 @@ function RecordLink({event, sessionName}: {event: AuditEvent; sessionName?: Sess
       </Link>
     );
   }
-  if (event.target_type === 'request' && typeof snapshot.bookingId === 'string') {
+  if ((event.target_type === 'request' || event.target_type === 'message') && typeof snapshot.bookingId === 'string') {
     return (
       <Link to={`/equipo/reservaciones/${snapshot.bookingId}/`} className={link}>
         {t('hist.record.booking', {ref: snapshot.bookingId})}
@@ -240,7 +272,7 @@ export function AuditRow({
   return (
     <li className={cn(rowItem, 'flex flex-col gap-1', className)}>
       <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base font-medium leading-6 text-ink">
-        <span>{actionLabel(t, event.action)}</span>
+        <span>{eventLabel(t, event)}</span>
         {showRecord ? <RecordLink event={event} sessionName={sessionName} /> : null}
       </p>
       <p className={cn(helper, numbers, 'break-all')}>

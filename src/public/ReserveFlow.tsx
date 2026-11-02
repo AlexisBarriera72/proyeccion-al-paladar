@@ -5,7 +5,7 @@
 import {useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type Ref} from 'react';
 import {AnimatePresence, motion, useReducedMotion} from 'motion/react';
 import {CalendarDays, CircleCheck, Copy, Hourglass, MessageCircle, Minus, Plus} from 'lucide-react';
-import type {BookingStatus, ManageView, PublicSession} from '../../shared/types.ts';
+import type {BookingStatus, ManageView, PublicSession, PublicTerms, TextStatus} from '../../shared/types.ts';
 import {formatLongDate, formatShortDate, formatTime} from '../../shared/time.ts';
 import {useT} from '../lib/i18n.tsx';
 import {useConfig} from '../lib/config.tsx';
@@ -15,7 +15,7 @@ import {readJson, remove, writeJson} from '../lib/storage.ts';
 import {copyText} from '../lib/copy.ts';
 import {formatMoney, pick} from '../lib/format.ts';
 import {SPRING} from '../lib/motion.ts';
-import {detailTitle, helper, inset, kicker, numbers, sectionTitle} from '../lib/styles.ts';
+import {detailTitle, doorNumber, helper, inset, kicker, numbers, sectionTitle} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Dialog} from '../components/ui/dialog.tsx';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
@@ -27,6 +27,7 @@ import {Ticket, TicketDate} from '../components/Ticket.tsx';
 import {Popcorn} from '../components/Popcorn.tsx';
 import {PolicyBlock, WhenText} from './SessionDetail.tsx';
 import {CalendarExport} from './CalendarExport.tsx';
+import {draftKey, receiptKey} from './flowStorage.ts';
 
 const PHONE = /^[0-9+()\-.\s]{7,20}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -42,6 +43,10 @@ interface Draft {
   contactValue: string;
   note: string;
   accepted: boolean;
+  /** The terms the guest ticked "I accept" for: a saved tick counts only for those same terms. */
+  acceptedKey?: string | null;
+  /** The guest asked for their booking number by text (phone only, when texts are on). */
+  textConsent?: boolean;
   mutationId: string;
   token: string;
 }
@@ -53,23 +58,43 @@ interface Receipt {
   token: string | null;
   partySize: number;
   replaced?: boolean;
+  intent?: 'reserve' | 'request';
+  /** The text with the booking number, as the provider answered (null: none was sent). */
+  text?: TextStatus | null;
+  /** The guest asked for a text, but their number can't take one. */
+  textNumberRefused?: boolean;
 }
 
-const draftKey = (id: string) => `pap-draft:${id}`;
-const receiptKey = (id: string) => `pap-receipt:${id}`;
+/** One key per set of terms: policy version and price. */
+const termsKey = (terms: PublicTerms | null) =>
+  terms ? [terms.policyVersionId, terms.priceStatus, terms.unitPriceCents, terms.currency].join('|') : null;
+
+/** The largest group the guest may choose: the session's limit, and the seats left when reserving. */
+const largestGroup = (session: PublicSession) =>
+  Math.min(session.partyMax ?? 60, session.action === 'reserve' && session.remaining !== null ? session.remaining : 60);
 
 function freshDraft(session: PublicSession, kind: 'phone' | 'email'): Draft {
   return {
     step: 1,
-    partySize: Math.max(session.partyMin ?? 1, Math.min(2, session.partyMax ?? 2)),
+    partySize: Math.max(session.partyMin ?? 1, Math.min(2, largestGroup(session))),
     leadName: '',
     contactKind: kind,
     contactValue: '',
     note: '',
     accepted: false,
+    acceptedKey: null,
+    textConsent: false,
     mutationId: newMutationId(),
     token: newToken(),
   };
+}
+
+/** A saved draft, with its group size brought within what the session allows now. */
+function restoredDraft(session: PublicSession, kind: 'phone' | 'email'): Draft {
+  const saved = readJson<Draft>('session', draftKey(session.id));
+  if (!saved) return freshDraft(session, kind);
+  const min = session.partyMin ?? 1;
+  return {...saved, partySize: Math.max(min, Math.min(largestGroup(session), saved.partySize))};
 }
 
 type Problem = {message: string; kind: 'lost' | 'retry' | 'final' | 'otherDates'} | null;
@@ -88,18 +113,38 @@ export function ReserveFlow({
   const {t, lang} = useT();
   const config = useConfig();
   const ids = useId();
-  const reserve = session.action === 'reserve';
   const required = config?.requiredContact;
   const lockedKind = required === 'phone' || required === 'email' ? required : null;
-  const [draft, setDraftState] = useState<Draft>(
-    () => readJson<Draft>('session', draftKey(session.id)) ?? freshDraft(session, lockedKind ?? 'phone'),
-  );
+  const [draft, setDraftState] = useState<Draft>(() => restoredDraft(session, lockedKind ?? 'phone'));
   const [receipt, setReceipt] = useState<Receipt | null>(() => readJson<Receipt>('session', receiptKey(session.id)));
+  // A receipt keeps the kind of booking it was made as, even after the session stops selling.
+  const reserve = receipt
+    ? (receipt.intent ?? (['confirmed', 'pending_payment'].includes(receipt.status) ? 'reserve' : 'request')) ===
+      'reserve'
+    : session.action === 'reserve';
+  // "I accept" counts only for the terms on screen now, not for terms a saved draft once showed.
+  const currentTerms = termsKey(session.terms);
+  const accepted = draft.accepted && draft.acceptedKey === currentTerms;
+  // Texts are offered only when the business has set them up, and only for a phone.
+  const textsOffered = Boolean(config?.texts) && draft.contactKind === 'phone';
+  // The group size as typed, so a field can be cleared and retyped without jumping.
+  const [partyText, setPartyText] = useState(() => String(draft.partySize));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState<Problem>(null);
   const [sending, setSending] = useState(false);
   // True only right after the server confirmed this reservation; a reopened receipt stays still.
   const [celebrate, setCelebrate] = useState(false);
+  useEffect(() => {
+    if (!open) setCelebrate(false);
+  }, [open]);
+  // Some answers change what the session page should show (no seats left, closed). Refreshing it
+  // while the sheet is open would take the sheet away before its message is read, so it waits.
+  const refreshOnClose = useRef(false);
+  useEffect(() => {
+    if (open || !refreshOnClose.current) return;
+    refreshOnClose.current = false;
+    onSessionChanged();
+  }, [open, onSessionChanged]);
   // Focus moves to each step's heading once that step is on screen, after the previous step has
   // left (the steps change with an exit animation), so the change is announced. The heading's
   // ref runs when the new step mounts; the effect below asks for it on every step change.
@@ -135,8 +180,14 @@ export function ReserveFlow({
     wantFocus.current = true;
   }, [step, open]);
 
-  const max = Math.min(session.partyMax ?? 60, reserve && session.remaining !== null ? session.remaining : 60);
+  const max = largestGroup(session);
   const min = session.partyMin ?? 1;
+  const partyTyped = /^\d+$/.test(partyText.trim()) ? Number(partyText.trim()) : null;
+  const partyValid = partyTyped !== null && partyTyped >= min && partyTyped <= max;
+  const setParty = (n: number) => {
+    setDraft({partySize: n});
+    setPartyText(String(n));
+  };
 
   const stepNames = [t('flow.step1'), t('flow.step2'), t('flow.step3'), t('flow.step4'), t('flow.step5')];
   const go = (next: Step) => {
@@ -162,11 +213,13 @@ export function ReserveFlow({
     setReceipt(next);
     setProblem(null);
     setCelebrate(next.status === 'confirmed' && !next.replaced);
+    // The seats this booking took show on the session page once the sheet closes.
+    refreshOnClose.current = true;
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (reserve && !draft.accepted) {
+    if (reserve && !accepted) {
       setErrors({accepted: t('flow.acceptRequired')});
       // The submit sits in the footer, so bring the checkbox and its error into view.
       requestAnimationFrame(() => {
@@ -196,6 +249,8 @@ export function ReserveFlow({
       reference: string;
       status?: BookingStatus;
       linkReplaced?: boolean;
+      text?: TextStatus | null;
+      textNumberRefused?: boolean;
     }>(
       '/api/public/bookings',
       {
@@ -208,7 +263,9 @@ export function ReserveFlow({
         note: draft.note.trim() || null,
         token: draft.token,
         terms,
-        acceptedTerms: reserve ? draft.accepted : false,
+        acceptedTerms: reserve ? accepted : false,
+        textConsent: textsOffered && Boolean(draft.textConsent),
+        lang,
       },
       draft.mutationId,
     );
@@ -227,6 +284,7 @@ export function ReserveFlow({
           token: null,
           partySize: draft.partySize,
           replaced: true,
+          intent: reserve ? 'reserve' : 'request',
         });
       } else {
         finish({
@@ -235,6 +293,9 @@ export function ReserveFlow({
           status: result.data.status!,
           token: draft.token,
           partySize: draft.partySize,
+          intent: reserve ? 'reserve' : 'request',
+          text: result.data.text ?? null,
+          textNumberRefused: Boolean(result.data.textNumberRefused),
         });
       }
       return;
@@ -251,6 +312,8 @@ export function ReserveFlow({
           status: b.status,
           token: draft.token,
           partySize: b.partySize,
+          intent: reserve ? 'reserve' : 'request',
+          text: b.text,
         });
         return;
       }
@@ -266,10 +329,10 @@ export function ReserveFlow({
     setDraft({mutationId: newMutationId()});
     if (code === 'terms_changed' || code === 'mode_requires_terms' || code === 'mode_not_confirmed') {
       onSessionChanged();
-      setDraft({accepted: false, step: 4, mutationId: newMutationId()});
+      setDraft({accepted: false, acceptedKey: null, step: 4, mutationId: newMutationId()});
       setProblem({message: t('error.termsChanged'), kind: 'final'});
     } else if (code === 'no_seats') {
-      onSessionChanged();
+      refreshOnClose.current = true;
       setProblem({message: t('error.noSeats'), kind: 'otherDates'});
     } else if (code === 'party_size_limits') {
       setProblem({message: t('error.limits'), kind: 'final'});
@@ -291,7 +354,7 @@ export function ReserveFlow({
         'session_not_found',
       ].includes(code)
     ) {
-      onSessionChanged();
+      refreshOnClose.current = true;
       setProblem({message: t('error.closed'), kind: 'otherDates'});
     } else {
       setProblem({message: t('error.generic'), kind: 'retry'});
@@ -302,7 +365,9 @@ export function ReserveFlow({
     remove('session', receiptKey(session.id));
     setReceipt(null);
     setCelebrate(false);
-    setDraftState(freshDraft(session, lockedKind ?? 'phone'));
+    const fresh = freshDraft(session, lockedKind ?? 'phone');
+    setDraftState(fresh);
+    setPartyText(String(fresh.partySize));
   };
 
   const total =
@@ -379,7 +444,7 @@ export function ReserveFlow({
               variant="secondary"
               aria-label={t('flow.groupLess')}
               disabled={draft.partySize <= min}
-              onClick={() => setDraft({partySize: Math.max(min, draft.partySize - 1)})}
+              onClick={() => setParty(Math.max(min, draft.partySize - 1))}
               className="w-11 px-0"
             >
               <Minus aria-hidden="true" />
@@ -390,19 +455,24 @@ export function ReserveFlow({
               type="number"
               min={min}
               max={max}
-              value={draft.partySize}
+              value={partyText}
               aria-describedby={describedBy(id, true, false)}
+              aria-invalid={!partyValid}
               onChange={event => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value)) setDraft({partySize: Math.max(min, Math.min(max, Math.round(value)))});
+                // Kept as typed; the draft takes it once it is a whole number within the limits.
+                const text = event.target.value;
+                setPartyText(text);
+                const n = /^\d+$/.test(text.trim()) ? Number(text.trim()) : null;
+                if (n !== null && n >= min && n <= max) setDraft({partySize: n});
               }}
+              onBlur={() => setParty(Math.max(min, Math.min(max, partyTyped ?? draft.partySize)))}
               className={cn('w-24 text-center font-semibold', numbers)}
             />
             <Button
               variant="secondary"
               aria-label={t('flow.groupMore')}
               disabled={draft.partySize >= max}
-              onClick={() => setDraft({partySize: Math.min(max, draft.partySize + 1)})}
+              onClick={() => setParty(Math.min(max, draft.partySize + 1))}
               className="w-11 px-0"
             >
               <Plus aria-hidden="true" />
@@ -412,18 +482,15 @@ export function ReserveFlow({
         <p className={cn(helper, numbers)} aria-live="polite">
           {people(draft.partySize)}
           {session.partyMax !== null ? ` · ${t('flow.groupMax', {max: session.partyMax})}` : ''}
-          {reserve && session.remaining !== null ? ` ${t('flow.groupSeats', {count: session.remaining})}` : ''}
+          {reserve && session.remaining !== null
+            ? ` ${session.remaining === 1 ? t('flow.groupSeatsOne') : t('flow.groupSeats', {count: session.remaining})}`
+            : ''}
         </p>
       </div>
     );
     footer = actions(
       1,
-      <Button
-        variant="primary"
-        className="flex-1"
-        onClick={() => go(3)}
-        disabled={draft.partySize < min || draft.partySize > max}
-      >
+      <Button variant="primary" className="flex-1" onClick={() => go(3)} disabled={!partyValid}>
         {t('flow.next')}
       </Button>,
     );
@@ -489,6 +556,21 @@ export function ReserveFlow({
             onChange={event => setDraft({contactValue: event.target.value})}
           />
         </Field>
+        {textsOffered ? (
+          <div className="space-y-1">
+            <Checkbox
+              id={`${ids}-text`}
+              checked={Boolean(draft.textConsent)}
+              onChange={textConsent => setDraft({textConsent})}
+              describedBy={`${ids}-text-help`}
+            >
+              {t('flow.textConsent')}
+            </Checkbox>
+            <p id={`${ids}-text-help`} className={cn(helper, 'pl-8')}>
+              {t('flow.textConsentHelp')}
+            </p>
+          </div>
+        ) : null}
         <Disclosure variant="link" summary={t('flow.addNote')} defaultOpen={Boolean(draft.note || errors.note)}>
           <Field
             id={noteId}
@@ -542,6 +624,9 @@ export function ReserveFlow({
             <span className={cn('block', draft.contactKind === 'phone' ? 'whitespace-nowrap' : 'break-all')}>
               {draft.contactValue}
             </span>
+            {textsOffered && draft.textConsent ? (
+              <span className={cn('block', helper)}>{t('flow.textChosen')}</span>
+            ) : null}
           </>
         ),
         edit: 3,
@@ -579,9 +664,9 @@ export function ReserveFlow({
           <div className="space-y-2">
             <Checkbox
               id={acceptId}
-              checked={draft.accepted}
-              onChange={accepted => {
-                setDraft({accepted});
+              checked={accepted}
+              onChange={next => {
+                setDraft({accepted: next, acceptedKey: next ? currentTerms : null});
                 setErrors({});
               }}
               invalid={Boolean(errors.accepted)}
@@ -644,9 +729,12 @@ export function ReserveFlow({
         celebrate={celebrate}
         startOver={
           // Quiet and last: starting over clears this receipt, the only copy of the private link here.
-          <Button variant="ghost" onClick={startOver} className="-ml-3">
-            {reserve ? t('flow.startOverReserve') : t('flow.startOverRequest')}
-          </Button>
+          // Not offered once the session can't be booked any more.
+          session.action === 'none' ? null : (
+            <Button variant="ghost" onClick={startOver} className="-ml-3">
+              {session.action === 'reserve' ? t('flow.startOverReserve') : t('flow.startOverRequest')}
+            </Button>
+          )
         }
       />
     );
@@ -751,12 +839,29 @@ function ReceiptView({
     );
   }
 
+  // A retried request reports the booking as it is now: it may have ended since.
+  const ended = !['confirmed', 'pending_payment', 'inquiry'].includes(receipt.status);
   const headline =
     receipt.status === 'confirmed'
       ? t('result.confirmed')
       : receipt.status === 'pending_payment'
         ? t('result.pending')
-        : t('result.inquiry');
+        : ended
+          ? t('result.ended')
+          : t('result.inquiry');
+  // What we say about messages is only what happened: a text the provider took, refused or never
+  // answered, a number that can't take one, or no message at all.
+  const text =
+    receipt.text && receipt.text.status !== 'skipped' && receipt.text.status !== 'queued' ? receipt.text : null;
+  const messageLine = text
+    ? text.status === 'sent'
+      ? t('result.textSent', {to: text.to})
+      : text.status === 'failed'
+        ? t('result.textFailed', {to: text.to})
+        : t('result.textUnknown', {to: text.to})
+    : receipt.textNumberRefused
+      ? t('result.textRefused')
+      : t('result.noMessage');
 
   const copyDm = async () => {
     const ok = await copyText(dm);
@@ -784,6 +889,8 @@ function ReceiptView({
           </h3>
           {receipt.status === 'confirmed' ? (
             <p className="text-base leading-6 text-ink">{t('result.confirmedHelp')}</p>
+          ) : ended ? (
+            <p className="text-base leading-6 text-ink">{t('result.endedHelp')}</p>
           ) : null}
         </div>
       </div>
@@ -793,10 +900,10 @@ function ReceiptView({
           <Ticket tone="wash" stub={<TicketDate ms={session.startsAt} />}>
             <dl className="space-y-2">
               <div>
-                <dt className={cn(kicker, 'text-accent')}>{t('result.reference')}</dt>
-                <dd className={cn('font-display text-[22px] font-semibold leading-7 text-ink', numbers)}>
-                  {receipt.reference}
-                </dd>
+                {/* The number the door asks for: large enough to read across a counter. */}
+                <dt className={cn(kicker, 'text-accent')}>{t('result.doorNumber')}</dt>
+                <dd className={cn(doorNumber, 'text-ink')}>{receipt.reference}</dd>
+                <dd className="mt-1 text-sm font-medium leading-5 text-ink">{t('result.doorHelp')}</dd>
               </div>
               <div>
                 <dt className={cn(kicker, 'text-muted')}>{t('detail.when')}</dt>
@@ -843,7 +950,9 @@ function ReceiptView({
           </div>
         </div>
       ) : null}
-      <p className="text-sm font-medium leading-5 text-ink">{t('result.noMessage')}</p>
+      <p className="text-sm font-medium leading-5 text-ink" data-message-line="">
+        {messageLine}
+      </p>
       <CalendarExport
         session={session}
         status={receipt.status}

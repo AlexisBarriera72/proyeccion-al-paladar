@@ -106,7 +106,10 @@ function DetailState({
   const {t} = useT();
   const entry = useEntry();
   if (selected.state === 'ready')
-    return <SessionDetail session={selected.session} variant={variant} onChanged={onChanged} />;
+    // One instance per session: a sheet's draft and receipt belong to the session they were made for.
+    return (
+      <SessionDetail key={selected.session.id} session={selected.session} variant={variant} onChanged={onChanged} />
+    );
   if (selected.state === 'none') return null;
 
   let body: ReactNode;
@@ -378,11 +381,12 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
   }, [sessionId, selectedStart]);
 
   // When no date is left this month, open on the next date's month, once, before the person
-  // moves through the months; the line under the controls says so.
+  // moves through the months; the line under the controls says so. It waits for the server's
+  // clock, so a device clock on the other side of midnight can't pick the wrong month.
   const [jumped, setJumped] = useState<Month | null>(null);
   const settled = useRef(false);
   useEffect(() => {
-    if (settled.current || !list) return;
+    if (settled.current || !list || !config) return;
     settled.current = true;
     if (sessionId) return;
     const upcoming = list.filter(
@@ -393,7 +397,7 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
     const target = {year: p.year, month: p.month};
     setMonth(target);
     setJumped(target);
-  }, [list, sessionId, now, current]);
+  }, [list, sessionId, now, current, config]);
 
   useEffect(() => {
     document.title =
@@ -624,7 +628,8 @@ export function CalendarPage({sessionId}: {sessionId: string | null}) {
     }
   }
 
-  const jumpedHere = jumped !== null && jumped.year === month.year && jumped.month === month.month;
+  // "No dates left this month" only makes sense on a later month than the current one.
+  const jumpedHere = jumped !== null && !isCurrent && jumped.year === month.year && jumped.month === month.month;
 
   return (
     <motion.div variants={entry.page} initial="hidden" animate="show">

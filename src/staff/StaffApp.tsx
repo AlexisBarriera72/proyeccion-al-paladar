@@ -4,7 +4,7 @@
 // Header: on computers, the brand row (with "Ver el sitio", the language and the account menu)
 // and the section links in three groups. Below 1024px, one compact row and a "Secciones" sheet.
 // Excepciones and Pedidos show a count only when above zero, from the staff endpoints.
-import {useCallback, useEffect, useRef, useState, type ReactNode} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
 import {DropdownMenu as M} from 'radix-ui';
 import {
   CalendarClock,
@@ -416,6 +416,22 @@ function NotFoundStaff() {
   );
 }
 
+/**
+ * The server's clock, kept moving. Door and close-out actions ("Registrar llegada", "No asistió")
+ * depend on the time, and the app can stay open for hours: the offset from this device's clock is
+ * measured once, when the server answers, and the time is refreshed every minute.
+ */
+function LiveMe({me, children}: {me: Me; children: ReactNode}) {
+  const offset = useMemo(() => me.now - Date.now(), [me]);
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const value = useMemo(() => ({...me, now: tick + offset}), [me, tick, offset]);
+  return <MeContext.Provider value={value}>{children}</MeContext.Provider>;
+}
+
 export default function StaffApp({path}: {path: string}) {
   const {t} = useStaffT();
   const {query, reload} = useQuery<Me>('/api/equipo/me');
@@ -437,9 +453,9 @@ export default function StaffApp({path}: {path: string}) {
     <Frame me={me}>
       <QueryView query={query} onRetry={() => void reload()}>
         {data => (
-          <MeContext.Provider value={data}>
+          <LiveMe me={data}>
             <Routes />
-          </MeContext.Provider>
+          </LiveMe>
         )}
       </QueryView>
     </Frame>

@@ -10,4 +10,4 @@ if (!fs.existsSync('dist/index.html')) {
 }
 const persist = path.resolve('.wrangler/test-state');
 prepareLocalDb(persist, {seed: process.env.PAP_SEED !== '0'});
-startWrangler(persist, Number(process.env.PORT ?? 8788), true);
+startWrangler(persist, Number(process.env.PORT ?? 8788), true, {fakeTexts: true});

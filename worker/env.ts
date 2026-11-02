@@ -14,6 +14,13 @@ export interface Env {
   /** Local tests only (scripts/test-server.mjs passes them with --var). */
   TEST_AUTH?: string;
   TEST_CLOCK?: string;
+  /** Local tests only: a fake SMS sender that sends nothing (worker/texts.ts). */
+  TEXT_FAKE?: string;
+  /** Text messages, off until all are set as secrets: the account, its token, and a sender. */
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
+  TWILIO_FROM?: string;
+  TWILIO_MESSAGING_SERVICE_SID?: string;
   DB?: Db;
   ASSETS?: {fetch(request: Request): Promise<Response>};
   SUBMIT_LIMITER?: RateLimiter;
@@ -34,7 +41,9 @@ export const testSwitches = (env: Env, request: Request) => env.APP_ENV === 'loc
 /** Why the Worker must refuse every request, or null when the environment is sound. */
 export function environmentProblem(env: Env): string | null {
   if (!APP_ENVS.includes(env.APP_ENV as AppEnv)) return 'environment_not_selected';
-  if ((env.TEST_AUTH || env.TEST_CLOCK) && env.APP_ENV !== 'local') return 'test_switch_in_deployed_environment';
+  if ((env.TEST_AUTH || env.TEST_CLOCK || env.TEXT_FAKE) && env.APP_ENV !== 'local') {
+    return 'test_switch_in_deployed_environment';
+  }
   if (!env.DB) return 'database_missing';
   return null;
 }

@@ -103,6 +103,17 @@ const demoOnly = () => {
 
 const migrate = () => wranglerSync(['d1', 'migrations', 'apply', dbName, '--env', envName, ...where]);
 
+/** Refuses while the database has migrations to apply: new code would read columns it lacks. */
+function requireMigrated() {
+  const out = wranglerSync(['d1', 'migrations', 'list', dbName, '--env', envName, ...where]);
+  if (/No migrations to apply/i.test(out)) return;
+  const pending = [...new Set([...out.matchAll(/\b\d{4}_[A-Za-z0-9_]+\.sql\b/g)].map(match => match[0]))];
+  fail(
+    `${dbName} has migrations to apply (${pending.join(', ') || 'see wrangler d1 migrations list'}). ` +
+      `Run \`npm run cf -- ${envName} migrate\` first. Nothing was changed.`,
+  );
+}
+
 // ------------------------------------------------------------------ actions
 const now = Date.now();
 switch (action) {
@@ -125,6 +136,7 @@ switch (action) {
   case 'seed': {
     demoOnly();
     requireMarker();
+    requireMigrated();
     if (!option('owner')) fail('seed needs --owner <email> (and optionally --staff <email[,email]>).');
     const owner = email(option('owner'), '--owner');
     const staff = (option('staff') ?? '')
@@ -159,6 +171,7 @@ switch (action) {
   case 'reset': {
     demoOnly();
     requireMarker();
+    requireMigrated();
     executeFile(
       [
         'INSERT INTO reset_lock (id) VALUES (1);',
@@ -185,7 +198,14 @@ switch (action) {
   case 'deploy': {
     if (envName === 'local') fail('local is never deployed.');
     requireMarker();
-    const secrets = JSON.parse(wranglerSync(['secret', 'list', '--env', envName, '--format', 'json']) || '[]');
+    requireMigrated();
+    let secrets = [];
+    try {
+      secrets = JSON.parse(wranglerSync(['secret', 'list', '--env', envName, '--format', 'json']) || '[]');
+    } catch (error) {
+      // A Worker that doesn't exist yet has no secrets: its first deploy creates it.
+      if (!/Worker .*not found|\b10007\b|\b10090\b/i.test(String(error))) throw error;
+    }
     const testSecrets = secrets.map(s => s.name).filter(name => name.startsWith('TEST_'));
     if (testSecrets.length) fail(`${envName} has TEST_* secrets (${testSecrets.join(', ')}). Delete them first.`);
     if (envName === 'production') {

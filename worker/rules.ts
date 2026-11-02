@@ -188,7 +188,8 @@ const termsForDestination: Check = accepted('b', 'd');
 const bookingSnapshot = (id: string) =>
   sql`(SELECT json_object('id', id, 'reference', reference, 'status', status, 'sessionId', session_id,
     'partySize', party_size, 'version', version, 'checkedInAt', checked_in_at,
-    'exceptionReason', exception_reason) FROM bookings WHERE id = ${id})`;
+    'exceptionReason', exception_reason, 'leadName', lead_name, 'contactKind', contact_kind,
+    'contactValue', contact_value, 'note', note, 'textTo', text_to) FROM bookings WHERE id = ${id})`;
 
 const bookingCarries = (id: string, mutationId: string) =>
   sql`EXISTS (SELECT 1 FROM bookings WHERE id = ${id} AND last_mutation_id = ${mutationId})`;
@@ -214,6 +215,8 @@ interface BookingUpdate {
   checks: Check[];
   destination?: string;
   extra?: (guard: Sql) => Sql[];
+  /** This write can confirm the booking: queue its number by text if the guest asked for it. */
+  textWhenConfirmed?: boolean;
 }
 
 /** An UPDATE of one booking, joined to its session (and a destination when moving). */
@@ -227,6 +230,7 @@ function bookingUpdate(p: BookingUpdate): ActionSpec {
       sql`UPDATE bookings AS b SET ${p.set}, version = b.version + 1, last_mutation_id = ${p.mutationId}, updated_at = ${p.now}
         FROM sessions AS s${from} WHERE s.id = b.session_id${where} AND b.id = ${p.id} AND ${allOf(p.checks)} AND ${guard}`,
       ...(p.extra?.(guard) ?? []),
+      ...(p.textWhenConfirmed ? [queueBookingText(p.id, p.mutationId, p.now)(guard)] : []),
     ],
     appliedWhen: bookingCarries(p.id, p.mutationId),
     rejectReason: sql`COALESCE((SELECT ${firstFailure(p.checks)} FROM bookings AS b JOIN sessions AS s ON s.id = b.session_id${leftJoin}
@@ -239,7 +243,9 @@ function bookingUpdate(p: BookingUpdate): ActionSpec {
  * Money received but no seats: in the same transaction, a booking that has a verified net
  * payment and doesn't fit becomes an exception. It holds no seats. Runs after the write it
  * follows, and only applies when that write didn't (the version is still the expected one,
- * or — when recording money — the payment row exists).
+ * or — when recording money — the payment row exists). Only a real shortage counts: the
+ * session has a capacity, and (for a confirm) seats are the first thing that failed, so a
+ * request in a session that takes no reservations is never turned into one.
  */
 function toExceptionWhenPaidWithoutSeats(p: {
   id: string;
@@ -253,7 +259,8 @@ function toExceptionWhenPaidWithoutSeats(p: {
         version = b.version + 1, last_mutation_id = ${p.mutationId}, updated_at = ${p.now}
       FROM sessions AS s WHERE s.id = b.session_id AND b.id = ${p.id} AND ${statusIn(p.statuses).when}
         AND (b.last_mutation_id IS NULL OR b.last_mutation_id <> ${p.mutationId})
-        AND ${p.extraCondition} AND ${net('b')} > 0 AND COALESCE(${free(A('b.party_size'), 0, 's').when}, 0) = 0
+        AND (${p.extraCondition}) AND ${net('b')} > 0
+        AND s.capacity IS NOT NULL AND COALESCE(${free(A('b.party_size'), 0, 's').when}, 0) = 0
         AND ${guard}`,
   ];
 }
@@ -271,6 +278,28 @@ export interface CreateBookingInput {
   tokenDigest: string | null;
   mutationId: string;
   now: number;
+  /** Where to text the booking number, in E.164 form: set only when the guest agreed to it. */
+  textTo?: string | null;
+  /** The language the guest booked in, for that text. */
+  lang?: 'es' | 'en';
+}
+
+/**
+ * When the write it follows leaves the booking confirmed, and the guest asked for their number by
+ * text (text_to), one text is queued in the same transaction. A booking's number is texted once:
+ * not again while one is queued, being sent, sent or of unknown outcome.
+ */
+function queueBookingText(id: string, mutationId: string, now: number) {
+  return (guard: Sql) =>
+    sql`INSERT INTO text_messages (id, booking_id, kind, to_number, status, created_at, updated_at, mutation_id,
+        last_mutation_id)
+      SELECT ${mutationId + ':text'}, b.id, 'booking_number', b.text_to, 'queued', ${now}, ${now}, ${mutationId},
+        ${mutationId}
+      FROM bookings AS b WHERE b.id = ${id} AND b.last_mutation_id = ${mutationId} AND b.status = 'confirmed'
+        AND b.text_to IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM text_messages tm WHERE tm.booking_id = b.id AND tm.kind = 'booking_number'
+          AND tm.status IN ('queued', 'sending', 'sent', 'unknown'))
+        AND ${guard}`;
 }
 
 /** A request that holds no seats. Guests only on inquiry-mode sessions; staff on any open one. */
@@ -293,31 +322,71 @@ export interface SeenTerms {
   currency: string | null;
 }
 
+/** The session's terms are still the ones the guest was shown. */
+const termsUnchanged = (seen: SeenTerms): Check => ({
+  code: 'terms_changed',
+  when: sql`(s.policy_version_id IS ${seen.policyVersionId} AND s.price_status IS ${seen.priceStatus}
+    AND s.price_cents IS ${seen.unitPriceCents} AND s.currency IS ${seen.currency})`,
+});
+
+/** Confirmed, or pending payment when the session's terms ask for full payment first. */
+const confirmedUnlessPrepaid = A(
+  `(CASE (SELECT pv.full_payment FROM policy_versions pv WHERE pv.id = s.policy_version_id) WHEN 1 THEN 'pending_payment' ELSE 'confirmed' END)`,
+);
+
 /** A guest accepting a confirmable session's terms: confirmed, or pending payment if prepaid. */
 export function createReservation(input: CreateBookingInput, seen: SeenTerms): ActionSpec {
   const checks: Check[] = [
     open(),
     future(input.now),
     ...confirmable(input.now),
-    {
-      code: 'terms_changed',
-      when: sql`(s.policy_version_id IS ${seen.policyVersionId} AND s.price_status IS ${seen.priceStatus}
-        AND s.price_cents IS ${seen.unitPriceCents} AND s.currency IS ${seen.currency})`,
-    },
+    termsUnchanged(seen),
     limits(input.partySize),
     free(input.partySize, 0),
     contactAllowed(input.contactKind),
   ];
-  const status = A(
-    `(CASE (SELECT pv.full_payment FROM policy_versions pv WHERE pv.id = s.policy_version_id) WHEN 1 THEN 'pending_payment' ELSE 'confirmed' END)`,
-  );
-  return createBooking(input, checks, status, true);
+  return createBooking(input, checks, confirmedUnlessPrepaid, true);
 }
 
-function createBooking(input: CreateBookingInput, checks: Check[], status: Sql, withTerms: boolean): ActionSpec {
+/**
+ * Staff register guests who arrive without a reservation, at a session on its own day, after the
+ * guest accepts the terms staff showed them, in person. The same seats, limits, terms and contact
+ * rules as a reservation: confirmed (and marked arrived) when the terms need no prepayment, else
+ * pending payment. It may start after the session has begun: a guest can arrive late.
+ */
+export function createWalkIn(
+  input: CreateBookingInput & {dayStart: number; dayEnd: number},
+  seen: SeenTerms,
+): ActionSpec {
+  const checks: Check[] = [
+    open(),
+    {code: 'not_session_day', when: sql`(s.starts_at >= ${input.dayStart} AND s.starts_at < ${input.dayEnd})`},
+    ...confirmable(input.now),
+    termsUnchanged(seen),
+    limits(input.partySize),
+    free(input.partySize, 0),
+    contactAllowed(input.contactKind),
+  ];
+  return createBooking(input, checks, confirmedUnlessPrepaid, true, {
+    channel: 'in_person',
+    checkInWhenConfirmed: true,
+  });
+}
+
+function createBooking(
+  input: CreateBookingInput,
+  checks: Check[],
+  status: Sql,
+  withTerms: boolean,
+  options: {channel?: 'guest_page' | 'in_person'; checkInWhenConfirmed?: boolean} = {},
+): ActionSpec {
   const terms = withTerms
     ? A('s.policy_version_id, s.price_status, s.price_cents, s.currency')
     : A('NULL, NULL, NULL, NULL');
+  // A walk-in who is confirmed is already at the door, so their arrival is recorded too.
+  const checkedIn = options.checkInWhenConfirmed
+    ? sql`CASE WHEN ${status} = 'confirmed' THEN ${input.now} END`
+    : raw('NULL');
   return {
     snapshot: raw('NULL'),
     // The history of the booking starts with the row this made.
@@ -325,20 +394,22 @@ function createBooking(input: CreateBookingInput, checks: Check[], status: Sql, 
     writes: guard => [
       sql`INSERT INTO bookings (id, reference, session_id, party_size, lead_name, contact_kind, contact_value, note, status,
           source, token_digest, accepted_policy_version_id, terms_price_status, unit_price_cents, currency, accepted_at,
-          synthetic, version, last_mutation_id, created_at, updated_at)
+          checked_in_at, text_to, lang, synthetic, version, last_mutation_id, created_at, updated_at)
         SELECT ${input.bookingId}, ${input.reference}, s.id, ${input.partySize}, ${input.leadName}, ${input.contactKind},
           ${input.contactValue}, ${input.note}, ${status}, ${input.source}, ${input.tokenDigest}, ${terms},
-          ${withTerms ? input.now : null}, s.synthetic, 1, ${input.mutationId}, ${input.now}, ${input.now}
+          ${withTerms ? input.now : null}, ${checkedIn}, ${input.textTo ?? null}, ${input.lang ?? 'es'}, s.synthetic, 1,
+          ${input.mutationId}, ${input.now}, ${input.now}
         FROM sessions AS s WHERE s.id = ${input.sessionId} AND ${allOf(checks)} AND ${guard}`,
       ...(withTerms
         ? [
             sql`INSERT INTO term_acceptances (id, booking_id, session_id, policy_version_id, price_status, unit_price_cents,
                 currency, accepted_at, channel, mutation_id)
               SELECT ${input.bookingId + ':terms'}, b.id, b.session_id, b.accepted_policy_version_id, b.terms_price_status,
-                b.unit_price_cents, b.currency, ${input.now}, 'guest_page', ${input.mutationId}
+                b.unit_price_cents, b.currency, ${input.now}, ${options.channel ?? 'guest_page'}, ${input.mutationId}
               FROM bookings AS b WHERE b.id = ${input.bookingId} AND b.last_mutation_id = ${input.mutationId} AND ${guard}`,
           ]
         : []),
+      queueBookingText(input.bookingId, input.mutationId, input.now)(guard),
     ],
     appliedWhen: bookingCarries(input.bookingId, input.mutationId),
     rejectReason: sql`COALESCE((SELECT ${firstFailure(checks)} FROM sessions AS s WHERE s.id = ${input.sessionId}), 'session_not_found')`,
@@ -356,28 +427,30 @@ interface BookingAction {
 /** Staff confirm an inquiry or a pending payment under the session's current terms. */
 export function confirm(p: BookingAction): ActionSpec {
   const n = A('b.party_size');
+  const checks: Check[] = [
+    version(p.expectedVersion),
+    statusIn(['inquiry', 'pending_payment']),
+    open(),
+    future(p.now),
+    ...confirmable(p.now),
+    limits(n),
+    free(n, 0),
+    accepted(),
+    paidUnder(n),
+  ];
   return bookingUpdate({
     ...p,
     set: sql`status = 'confirmed', prev_status = b.status, exception_reason = NULL, ${lockTermsOf('s')},
       accepted_at = ${latestAcceptanceAt('s')}`,
-    checks: [
-      version(p.expectedVersion),
-      statusIn(['inquiry', 'pending_payment']),
-      open(),
-      future(p.now),
-      ...confirmable(p.now),
-      limits(n),
-      free(n, 0),
-      accepted(),
-      paidUnder(n),
-    ],
+    checks,
     extra: toExceptionWhenPaidWithoutSeats({
       id: p.id,
       mutationId: p.mutationId,
       now: p.now,
       statuses: ['inquiry', 'pending_payment'],
-      extraCondition: sql`b.version = ${p.expectedVersion}`,
+      extraCondition: sql`b.version = ${p.expectedVersion} AND ${firstFailure(checks)} = 'no_seats'`,
     }),
+    textWhenConfirmed: true,
   });
 }
 
@@ -399,6 +472,7 @@ export function resolveSame(p: BookingAction): ActionSpec {
       accepted(),
       paidUnder(n),
     ],
+    textWhenConfirmed: true,
   });
 }
 
@@ -408,7 +482,7 @@ export function resolveOther(p: BookingAction & {destination: string}): ActionSp
   return bookingUpdate({
     ...p,
     set: sql`session_id = d.id, prev_session_id = b.session_id, status = 'confirmed', prev_status = b.status,
-      exception_reason = NULL, ${lockTermsOf('d')},
+      exception_reason = NULL, checked_in_at = NULL, ${lockTermsOf('d')},
       accepted_at = CASE WHEN ${sameTerms('b', 'd')} THEN b.accepted_at ELSE ${latestAcceptanceAt('d')} END`,
     checks: [
       version(p.expectedVersion),
@@ -423,6 +497,7 @@ export function resolveOther(p: BookingAction & {destination: string}): ActionSp
       termsForDestination,
       paidUnder(n, 'b', 'd'),
     ],
+    textWhenConfirmed: true,
   });
 }
 
@@ -448,7 +523,8 @@ export function moveConfirmed(p: BookingAction & {destination: string}): ActionS
   const n = A('b.party_size');
   return bookingUpdate({
     ...p,
-    set: sql`session_id = d.id, prev_session_id = b.session_id, ${lockTermsOf('d')},
+    // An arrival belongs to the date it was recorded on: a move clears it.
+    set: sql`session_id = d.id, prev_session_id = b.session_id, checked_in_at = NULL, ${lockTermsOf('d')},
       accepted_at = CASE WHEN ${sameTerms('b', 'd')} THEN b.accepted_at ELSE ${latestAcceptanceAt('d')} END`,
     checks: [
       version(p.expectedVersion),
@@ -507,7 +583,12 @@ export function moveRequest(
         status = CASE WHEN ${noPrepay} THEN 'confirmed' ELSE b.status END,
         prev_status = CASE WHEN ${noPrepay} THEN b.status ELSE b.prev_status END`
       : raw('');
-  return bookingUpdate({...p, set: sql`session_id = d.id, prev_session_id = b.session_id${relock}`, checks});
+  return bookingUpdate({
+    ...p,
+    set: sql`session_id = d.id, prev_session_id = b.session_id${relock}`,
+    checks,
+    textWhenConfirmed: p.status === 'pending_payment',
+  });
 }
 
 /** Staff edit a request that holds no seats. A new size re-runs the create rules for that size. */
@@ -520,6 +601,8 @@ export function editRequest(
     contactKind: 'phone' | 'email';
     contactValue: string;
     note: string | null;
+    /** Where to text the number once confirmed, in E.164 form: set only with the guest's consent. */
+    textTo: string | null;
   },
 ): ActionSpec {
   const sizeChecks: Check[] = !p.sizeChanged
@@ -530,7 +613,7 @@ export function editRequest(
   return bookingUpdate({
     ...p,
     set: sql`party_size = ${p.partySize}, prev_party_size = b.party_size, lead_name = ${p.leadName},
-      contact_kind = ${p.contactKind}, contact_value = ${p.contactValue}, note = ${p.note}`,
+      contact_kind = ${p.contactKind}, contact_value = ${p.contactValue}, note = ${p.note}, text_to = ${p.textTo}`,
     checks: [
       version(p.expectedVersion),
       statusIn([p.status]),
@@ -544,12 +627,20 @@ export function editRequest(
   });
 }
 
+/** When a write ends a booking, its open terms proposals are withdrawn with it. */
+const withdrawProposals = (id: string, mutationId: string) => (guard: Sql) => [
+  sql`UPDATE term_proposals SET status = 'withdrawn', last_mutation_id = ${mutationId}
+    WHERE booking_id = ${id} AND status = 'open'
+      AND EXISTS (SELECT 1 FROM bookings WHERE id = ${id} AND last_mutation_id = ${mutationId}) AND ${guard}`,
+];
+
 /** Staff cancel any active booking. No session checks: a past or unconfigured session is fine. */
 export function cancel(p: BookingAction): ActionSpec {
   return bookingUpdate({
     ...p,
     set: raw(`status = 'cancelled', prev_status = b.status`),
     checks: [version(p.expectedVersion), statusIn(ACTIVE)],
+    extra: withdrawProposals(p.id, p.mutationId),
   });
 }
 
@@ -564,6 +655,7 @@ export function withdraw(p: BookingAction & {tokenDigest: string}): ActionSpec {
       statusIn(['inquiry', 'pending_payment']),
       {code: 'has_payment', when: sql`${net('b')} = 0`},
     ],
+    extra: withdrawProposals(p.id, p.mutationId),
   });
 }
 
@@ -593,6 +685,7 @@ export function markOutcome(p: BookingAction & {outcome: 'fulfilled' | 'no_show'
       statusIn(['confirmed']),
       {code: 'session_not_started', when: sql`(s.starts_at IS NOT NULL AND s.starts_at <= ${p.now})`},
     ],
+    extra: withdrawProposals(p.id, p.mutationId),
   });
 }
 
@@ -799,5 +892,81 @@ export function resolveRequest(p: {requestId: string; actor: string; mutationId:
     rejectReason: sql`COALESCE((SELECT CASE WHEN status <> 'open' THEN 'already_resolved' ELSE 'rejected' END
       FROM booking_requests WHERE id = ${p.requestId}), 'not_found')`,
     outcome: snapshot,
+  };
+}
+
+// ---------------------------------------------------------------- texts
+
+const textSnapshot = (id: string) =>
+  sql`(SELECT json_object('id', id, 'bookingId', booking_id, 'status', status, 'providerId', provider_id)
+    FROM text_messages WHERE id = ${id})`;
+const textCarries = (id: string, mutationId: string) =>
+  sql`EXISTS (SELECT 1 FROM text_messages WHERE id = ${id} AND last_mutation_id = ${mutationId})`;
+
+const textBookingConfirmed = A(
+  `EXISTS (SELECT 1 FROM bookings tb WHERE tb.id = t.booking_id AND tb.status = 'confirmed')`,
+);
+
+/**
+ * Take a queued text to send it. Only one request can, so a text is never sent twice; and only
+ * while its booking is still confirmed, so a text that says "confirmed" never follows a cancel.
+ */
+export function claimText(p: {id: string; mutationId: string; now: number}): ActionSpec {
+  const checks: Check[] = [
+    {code: 'text_not_queued', when: raw(`t.status = 'queued'`)},
+    {code: 'text_booking_not_confirmed', when: textBookingConfirmed},
+  ];
+  return {
+    snapshot: textSnapshot(p.id),
+    writes: guard => [
+      sql`UPDATE text_messages AS t SET status = 'sending', updated_at = ${p.now}, last_mutation_id = ${p.mutationId}
+        WHERE t.id = ${p.id} AND ${allOf(checks)} AND ${guard}`,
+    ],
+    appliedWhen: textCarries(p.id, p.mutationId),
+    rejectReason: sql`COALESCE((SELECT ${firstFailure(checks)} FROM text_messages AS t WHERE t.id = ${p.id}), 'not_found')`,
+    outcome: textSnapshot(p.id),
+  };
+}
+
+/** A queued text whose booking is no longer confirmed is skipped: it is never sent. */
+export function skipText(p: {id: string; mutationId: string; now: number}): ActionSpec {
+  const checks: Check[] = [
+    {code: 'text_not_queued', when: raw(`t.status = 'queued'`)},
+    {code: 'text_booking_confirmed', when: sql`NOT ${textBookingConfirmed}`},
+  ];
+  return {
+    snapshot: textSnapshot(p.id),
+    writes: guard => [
+      sql`UPDATE text_messages AS t SET status = 'skipped', error = 'booking_not_confirmed', updated_at = ${p.now},
+          last_mutation_id = ${p.mutationId}
+        WHERE t.id = ${p.id} AND ${allOf(checks)} AND ${guard}`,
+    ],
+    appliedWhen: textCarries(p.id, p.mutationId),
+    rejectReason: sql`COALESCE((SELECT ${firstFailure(checks)} FROM text_messages AS t WHERE t.id = ${p.id}), 'not_found')`,
+    outcome: textSnapshot(p.id),
+  };
+}
+
+/** What the provider answered for a text being sent; nothing else sets a text's outcome. */
+export function recordText(p: {
+  id: string;
+  status: 'sent' | 'failed' | 'unknown' | 'skipped';
+  providerId: string | null;
+  error: string | null;
+  body: string | null;
+  mutationId: string;
+  now: number;
+}): ActionSpec {
+  const checks: Check[] = [{code: 'text_not_sending', when: raw(`t.status = 'sending'`)}];
+  return {
+    snapshot: textSnapshot(p.id),
+    writes: guard => [
+      sql`UPDATE text_messages AS t SET status = ${p.status}, provider_id = ${p.providerId}, error = ${p.error},
+          body = ${p.body}, updated_at = ${p.now}, last_mutation_id = ${p.mutationId}
+        WHERE t.id = ${p.id} AND ${allOf(checks)} AND ${guard}`,
+    ],
+    appliedWhen: textCarries(p.id, p.mutationId),
+    rejectReason: sql`COALESCE((SELECT ${firstFailure(checks)} FROM text_messages AS t WHERE t.id = ${p.id}), 'not_found')`,
+    outcome: textSnapshot(p.id),
   };
 }

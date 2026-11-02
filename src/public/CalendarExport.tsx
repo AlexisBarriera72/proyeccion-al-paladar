@@ -52,7 +52,8 @@ export function CalendarExport({
     setHref(url);
     return () => URL.revokeObjectURL(url);
   }, [event, reference, icsStatus]);
-  if (!event || status === 'cancelled') return null;
+  // Nothing to add for a booking that ended without the guest attending.
+  if (!event || status === 'cancelled' || status === 'no_show') return null;
   return (
     <div className={full ? 'flex flex-col gap-2' : 'flex flex-wrap gap-2'}>
       {href ? (

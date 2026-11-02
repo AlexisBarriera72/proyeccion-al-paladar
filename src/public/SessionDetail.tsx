@@ -1,5 +1,5 @@
 // One session: what's known about it, the terms, and the action the server would accept.
-import {lazy, Suspense, useState} from 'react';
+import {lazy, Suspense, useEffect, useState} from 'react';
 import {motion} from 'motion/react';
 import {ArrowLeft, CalendarDays, ExternalLink, Link2, MapPin, Tag, Users} from 'lucide-react';
 import type {PublicSession} from '../../shared/types.ts';
@@ -18,6 +18,7 @@ import {Price} from '../components/Price.tsx';
 import {Photo} from '../components/Photo.tsx';
 import {Disclosure} from '../components/ui/disclosure.tsx';
 import {PageBand, PageSheet} from '../components/Band.tsx';
+import {hasReceipt} from './flowStorage.ts';
 
 const fact = 'space-y-0.5 py-3';
 const factLabel = 'flex items-center gap-2 text-sm leading-5 text-muted [&_svg]:size-4 [&_svg]:shrink-0';
@@ -111,6 +112,16 @@ export function SessionDetail({
   const config = useConfig();
   const [flowOpen, setFlowOpen] = useState(false);
   const [flowUsed, setFlowUsed] = useState(false);
+  // A receipt from this tab stays reachable even once the session can't be booked any more
+  // (for instance when this booking took its last seats): it holds the guest's private link.
+  const [receiptSaved, setReceiptSaved] = useState(() => hasReceipt(session.id));
+  useEffect(() => {
+    if (!flowOpen) setReceiptSaved(hasReceipt(session.id));
+  }, [flowOpen, session.id]);
+  const openFlow = () => {
+    setFlowUsed(true);
+    setFlowOpen(true);
+  };
   const [shared, setShared] = useState<string | null>(null);
   const magnetic = useMagnetic(3);
   const entry = useEntry();
@@ -214,27 +225,26 @@ export function SessionDetail({
         {session.action === 'none' ? (
           <div className="space-y-2">
             <p className="text-base leading-6 text-ink">{t('action.none')}</p>
-            <a
-              href={instagram}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={buttonVariants({variant: 'secondary'})}
-            >
-              <ExternalLink aria-hidden="true" />
-              {t('action.noneHelp')}
-            </a>
+            <div className="flex flex-wrap gap-3">
+              {receiptSaved ? (
+                <Button variant="primary" onClick={openFlow}>
+                  {t('action.viewReceipt')}
+                </Button>
+              ) : null}
+              <a
+                href={instagram}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonVariants({variant: 'secondary'})}
+              >
+                <ExternalLink aria-hidden="true" />
+                {t('action.noneHelp')}
+              </a>
+            </div>
           </div>
         ) : (
           <div {...magnetic.handlers} className="w-full">
-            <Button
-              variant="primary"
-              width="full"
-              onClick={() => {
-                setFlowUsed(true);
-                setFlowOpen(true);
-              }}
-              className="relative"
-            >
+            <Button variant="primary" width="full" onClick={openFlow} className="relative">
               <motion.span style={magnetic.style} className="inline-flex items-center gap-2">
                 {session.action === 'reserve' ? t('action.reserve') : t('action.request')}
               </motion.span>
@@ -287,7 +297,8 @@ export function SessionDetail({
         <PolicyBlock policy={session.policy} />
       </section>
 
-      {session.action !== 'none' && flowUsed ? (
+      {/* Mounted while open, so a refusal that ends the session's sale can still be read. */}
+      {flowUsed && (session.action !== 'none' || flowOpen || receiptSaved) ? (
         <Suspense fallback={null}>
           <ReserveFlow session={session} open={flowOpen} onOpenChange={setFlowOpen} onSessionChanged={onChanged} />
         </Suspense>

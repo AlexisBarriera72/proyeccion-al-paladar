@@ -108,6 +108,12 @@ export function updateSession(p: {
       ...noOverlap(lit(f.venueId), lit(f.startsAt), lit(f.endsAt), raw('s.id')),
       when: sql`(s.state <> 'published' OR ${noOverlap(lit(f.venueId), lit(f.startsAt), lit(f.endsAt), raw('s.id')).when})`,
     },
+    // A published session only ever shows text the owners approved, as publishing requires.
+    {
+      code: 'experience_not_approved',
+      when: sql`(s.state <> 'published'
+        OR EXISTS (SELECT 1 FROM experiences ex WHERE ex.id = ${f.experienceId} AND ex.status = 'approved'))`,
+    },
   ];
   return {
     snapshot: sessionSnapshot(p.id),
@@ -235,7 +241,16 @@ export function saveExperience(p: {
       outcome: rowSnapshot('experiences', p.id),
     };
   }
-  const checks = [version(p.expectedVersion, 'e')];
+  const checks: Check[] = [
+    version(p.expectedVersion, 'e'),
+    // Guests see an experience through its published sessions: while one is on sale, its text can
+    // only be saved as approved (by the owners), never moved back to a draft or archived.
+    {
+      code: 'experience_in_use',
+      when: sql`(${f.status} = 'approved'
+        OR NOT EXISTS (SELECT 1 FROM sessions us WHERE us.experience_id = e.id AND us.state = 'published'))`,
+    },
+  ];
   return {
     snapshot: rowSnapshot('experiences', p.id),
     writes: guard => [
@@ -474,6 +489,7 @@ export function saveStaffMember(p: {
  */
 /** What a demo reset empties, children first. Staff members and the audit history stay. */
 export const DEMO_RESET_TABLES = [
+  'text_messages',
   'payments',
   'term_acceptances',
   'term_proposals',

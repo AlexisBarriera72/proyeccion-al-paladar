@@ -74,6 +74,15 @@ export interface PublicConfig {
   requiredContact: 'phone' | 'email' | 'either' | null;
   instagramUrl: string;
   now: number;
+  /** An SMS provider is set up, so a guest can ask for their number by text. */
+  texts: boolean;
+}
+
+/** A booking's latest text, from what the provider answered. `to` is masked ("••• 0142"). */
+export interface TextStatus {
+  status: 'queued' | 'sent' | 'failed' | 'unknown' | 'skipped';
+  to: string;
+  at: number;
 }
 
 export interface ManageProposal {
@@ -102,6 +111,8 @@ export interface ManageView {
   proposals: ManageProposal[];
   openRequests: {id: string; kind: 'cancel' | 'change'; createdAt: number}[];
   canWithdraw: boolean;
+  /** The booking's latest text with its number, if the guest asked for one. */
+  text: TextStatus | null;
 }
 
 /** The answer to any write. */
@@ -116,4 +127,8 @@ export interface CreateBookingResponse {
   reference: string;
   status: BookingStatus;
   version: number;
+  /** The text with the booking number, as the provider answered; null when none was queued. */
+  text: TextStatus | null;
+  /** The guest asked for a text, but their number can't take one. */
+  textNumberRefused: boolean;
 }

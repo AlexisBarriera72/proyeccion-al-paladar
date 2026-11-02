@@ -433,10 +433,12 @@ function RuleSettings({
   const [processApproved, setProcessApproved] = useState(value('exception_process_approved') === '1');
   const owner = me.role === 'owner';
 
+  /** Saves one setting and says what happened; true only when the server applied it. */
   const save = async (key: string, next: string) => {
     const result = await run('/api/equipo/settings', {key, value: next});
     setNotice(outcome(result, t('set.saved')));
     onSaved();
+    return result.kind === 'ok';
   };
 
   return (
@@ -504,7 +506,8 @@ function RuleSettings({
             className="self-start"
             disabled={!owner || busy}
             onClick={async () => {
-              await save('exception_process_text', processText.trim());
+              // The text first: approval is never saved (or reported as saved) without it.
+              if (!(await save('exception_process_text', processText.trim()))) return;
               await save('exception_process_approved', processApproved ? '1' : '0');
             }}
           >

@@ -1,7 +1,17 @@
 // Staff queues: Excepciones, guest requests, tonight's check-in list and the audit history.
 import {useEffect, useId, useRef, useState} from 'react';
 import {motion} from 'motion/react';
-import {ArrowLeftRight, CalendarX, CircleCheck, CircleX, Inbox, MessageSquareText, RotateCw} from 'lucide-react';
+import {
+  ArrowLeftRight,
+  CalendarX,
+  CircleCheck,
+  CircleX,
+  Inbox,
+  MessageSquareText,
+  RotateCw,
+  Search,
+  UserPlus,
+} from 'lucide-react';
 import {formatLongDate, formatShortDate, formatTime, prDateKey} from '../../shared/time.ts';
 import {formatMoney} from '../lib/format.ts';
 import {Link} from '../lib/router.tsx';
@@ -26,6 +36,7 @@ import {
   QueryView,
   SelectField,
   StatusPill,
+  TextField,
   When,
   flushList,
   rowItem,
@@ -36,7 +47,8 @@ import {
 import {SessionPicker, useSessionOptions} from './rows.tsx';
 import {AuditRow, historyType, type HistoryType} from './history.tsx';
 import {useMe, useRefreshCounts} from './me.ts';
-import type {AuditEvent, Catalog, StaffBookingRow} from './types.ts';
+import {WalkInSheet, findArrivals} from './Door.tsx';
+import type {AuditEvent, Catalog, StaffBookingRow, TonightData} from './types.ts';
 
 // ------------------------------------------------------------------ Excepciones
 
@@ -313,11 +325,16 @@ type Arrivals = 'waiting' | 'arrived' | 'all';
 export function Tonight() {
   const {t, lang} = useStaffT();
   const me = useMe();
+  const ids = useId();
   const outcome = useOutcome();
   const {run, busy} = useWrite();
   const [notice, setNotice] = useState<Notice>(null);
   const [filter, setFilter] = useState<Arrivals>('waiting');
-  const {query, reload} = useQuery<{bookings: StaffBookingRow[]; dayStart: number}>('/api/equipo/tonight');
+  // Recepción: what the door typed (a booking number, a name or a phone), and the walk-in sheet.
+  const [find, setFind] = useState('');
+  const [walkIn, setWalkIn] = useState(false);
+  const {query, reload} = useQuery<TonightData>('/api/equipo/tonight');
+  const searching = find.trim().length > 0;
 
   // A check-in can take its row out of the list ("Por llegar"), so focus moves on to the next
   // guest's button, or the previous one, or the summary line, instead of falling to the page.
@@ -337,19 +354,94 @@ export function Tonight() {
     else buttons.current.delete(id);
   };
 
+  // Bumped once the list shows a check-in's result, so the focus effect runs on the new rows.
+  const [, setFocusTick] = useState(0);
   const toggle = async (b: StaffBookingRow) => {
     const at = order.current.indexOf(b.id);
     const after = order.current.slice(at + 1);
     const before = order.current.slice(0, Math.max(0, at)).reverse();
-    // In "Todas" the row stays, with its other button; elsewhere it leaves the list.
-    pendingFocus.current = filter === 'all' ? [b.id, ...after, ...before] : [...after, ...before];
     const result = await run(`/api/equipo/bookings/${b.id}/actions`, {
       action: b.checked_in_at ? 'undo_check_in' : 'check_in',
       expectedVersion: b.version,
     });
     setNotice(outcome(result, t('bk.done')));
-    void reload(true);
+    await reload(true);
+    // Only now that the rows show the change (the row's button swapped, or the row gone): in
+    // "Todas" and in search results the row stays, with its other button; elsewhere it leaves.
+    pendingFocus.current = filter === 'all' || searching ? [b.id, ...after, ...before] : [...after, ...before];
+    setFocusTick(tick => tick + 1);
   };
+
+  const row = (b: StaffBookingRow) => (
+    <li
+      key={b.id}
+      className={cn(
+        rowItem,
+        // Phones stack the row, so the name, reference and note keep the width.
+        'flex min-h-16 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between',
+      )}
+    >
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to={`/equipo/reservaciones/${b.id}/`}
+            className="break-words text-base font-medium leading-6 text-ink underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            {b.lead_name}
+          </Link>
+          <Demo synthetic={b.synthetic} />
+        </div>
+        <p className={cn(helper, numbers)}>
+          <span className="whitespace-nowrap">
+            {b.party_size === 1 ? t('bk.person') : t('bk.people', {count: b.party_size})} ·
+          </span>{' '}
+          <span className="whitespace-nowrap font-semibold text-ink">{b.reference}</span>
+          {searching && b.starts_at ? (
+            <span className="whitespace-nowrap"> · {formatTime(b.starts_at, lang)}</span>
+          ) : null}
+        </p>
+        {b.note ? (
+          <p className="flex items-start gap-1.5 text-sm leading-5 text-ink">
+            <MessageSquareText className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span className="line-clamp-2 break-words">{b.note}</span>
+          </p>
+        ) : null}
+      </div>
+      {b.status === 'confirmed' ? (
+        b.checked_in_at ? (
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <span className={cn('inline-flex items-center gap-1.5 text-sm font-medium leading-5 text-ink', numbers)}>
+              <CircleCheck className="size-4 shrink-0" aria-hidden="true" />
+              {t('bk.checkedIn', {time: formatTime(b.checked_in_at, lang)})}
+            </span>
+            <Button
+              ref={buttonRef(b.id)}
+              variant="secondary"
+              className="w-full sm:w-auto"
+              disabled={busy}
+              onClick={() => void toggle(b)}
+            >
+              {t('bk.undoCheckIn')}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            ref={buttonRef(b.id)}
+            variant="primary"
+            className="w-full sm:w-auto"
+            disabled={busy}
+            onClick={() => void toggle(b)}
+          >
+            {t('bk.checkIn')}
+          </Button>
+        )
+      ) : (
+        <span className="self-start sm:self-auto">
+          <BookingStatus status={b.status} />
+        </span>
+      )}
+    </li>
+  );
 
   return (
     <Page className="max-w-2xl">
@@ -359,175 +451,158 @@ export function Tonight() {
       />
       <NoticeLine notice={notice} />
       <QueryView query={query} onRetry={() => void reload()}>
-        {({bookings}) => {
-          if (!bookings.length) {
-            return (
-              <Panel>
-                <Empty
-                  icon={CalendarX}
-                  action={
-                    <Link to="/equipo/" className={buttonVariants({variant: 'secondary'})}>
-                      {t('ton.viewCalendar')}
-                    </Link>
-                  }
-                >
-                  {t('ton.empty')}
-                </Empty>
-              </Panel>
-            );
-          }
+        {({bookings, sessions}) => {
           const counted = (list: StaffBookingRow[]) => list.reduce((sum, b) => sum + b.party_size, 0);
           const confirmed = bookings.filter(b => b.status === 'confirmed' || b.status === 'fulfilled');
           const total = counted(confirmed);
           const arrived = counted(confirmed.filter(b => b.checked_in_at));
           const waiting = bookings.filter(b => b.status === 'confirmed' && !b.checked_in_at);
           const came = bookings.filter(b => Boolean(b.checked_in_at));
+          const found = findArrivals(bookings, find);
           const shown = filter === 'waiting' ? waiting : filter === 'arrived' ? came : bookings;
           const groups = new Map<string, StaffBookingRow[]>();
           for (const b of shown) groups.set(b.session_id, [...(groups.get(b.session_id) ?? []), b]);
-          order.current = [...groups.values()].flat().map(b => b.id);
+          order.current = searching ? found.map(b => b.id) : [...groups.values()].flat().map(b => b.id);
           return (
             <div className="flex flex-col gap-6">
-              <Panel>
-                <div className="flex flex-col gap-3">
-                  <p
-                    ref={summary}
-                    tabIndex={-1}
-                    className={cn('text-base font-semibold leading-6 text-ink focus:outline-none', numbers)}
-                    aria-live="polite"
-                  >
-                    {t('ton.summary', {arrived, total})}
-                  </p>
-                  <Meter value={arrived} max={total} className="w-full" />
-                </div>
-              </Panel>
-              <div>
-                <Switch
-                  value={filter}
-                  onChange={setFilter}
-                  label={t('ton.view')}
-                  options={[
-                    {
-                      value: 'waiting',
-                      label: <span className={numbers}>{t('ton.waiting', {count: waiting.length})}</span>,
-                    },
-                    {
-                      value: 'arrived',
-                      label: <span className={numbers}>{t('ton.arrivedTab', {count: came.length})}</span>,
-                    },
-                    {value: 'all', label: t('ton.all')},
-                  ]}
+              <Panel
+                title={t('ton.find')}
+                actions={
+                  sessions.length ? (
+                    <Button variant="secondary" onClick={() => setWalkIn(true)}>
+                      <UserPlus aria-hidden="true" />
+                      {t('walk.open')}
+                    </Button>
+                  ) : null
+                }
+              >
+                <TextField
+                  id={`${ids}-find`}
+                  label={t('ton.findLabel')}
+                  help={t('ton.findHelp')}
+                  type="search"
+                  inputMode="search"
+                  value={find}
+                  onChange={setFind}
                 />
-              </div>
-              {/* A filter change shows its groups at once (no replayed entry). */}
-              <motion.div initial={false} animate="show" className="flex flex-col gap-6">
-                {groups.size ? (
-                  [...groups.values()].map(list => {
-                    const first = list[0];
-                    const all = bookings.filter(b => b.session_id === first.session_id);
-                    const sessionConfirmed = all.filter(b => b.status === 'confirmed' || b.status === 'fulfilled');
-                    return (
-                      <Panel
-                        key={first.session_id}
-                        flush
-                        title={
-                          <span className={numbers}>
-                            {first.starts_at ? `${formatTime(first.starts_at, lang)} · ` : ''}
-                            {first.title_es}
-                          </span>
-                        }
-                        actions={
-                          <span className={cn(helper, numbers)}>
-                            {t('ton.sessionArrived', {
-                              arrived: counted(sessionConfirmed.filter(b => b.checked_in_at)),
-                              total: counted(sessionConfirmed),
-                            })}
-                          </span>
-                        }
-                      >
-                        <ul className={flushList}>
-                          {list.map(b => (
-                            <li
-                              key={b.id}
-                              className={cn(
-                                rowItem,
-                                // Phones stack the row, so the name, reference and note keep the width.
-                                'flex min-h-16 flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between',
-                              )}
-                            >
-                              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Link
-                                    to={`/equipo/reservaciones/${b.id}/`}
-                                    className="break-words text-base font-medium leading-6 text-ink underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                                  >
-                                    {b.lead_name}
-                                  </Link>
-                                  <Demo synthetic={b.synthetic} />
-                                </div>
-                                <p className={cn(helper, numbers)}>
-                                  <span className="whitespace-nowrap">
-                                    {b.party_size === 1 ? t('bk.person') : t('bk.people', {count: b.party_size})} ·
-                                  </span>{' '}
-                                  <span className="whitespace-nowrap">{b.reference}</span>
-                                </p>
-                                {b.note ? (
-                                  <p className="flex items-start gap-1.5 text-sm leading-5 text-ink">
-                                    <MessageSquareText className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                                    <span className="line-clamp-2 break-words">{b.note}</span>
-                                  </p>
-                                ) : null}
-                              </div>
-                              {b.status === 'confirmed' ? (
-                                b.checked_in_at ? (
-                                  <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                                    <span
-                                      className={cn(
-                                        'inline-flex items-center gap-1.5 text-sm font-medium leading-5 text-ink',
-                                        numbers,
-                                      )}
-                                    >
-                                      <CircleCheck className="size-4 shrink-0" aria-hidden="true" />
-                                      {t('bk.checkedIn', {time: formatTime(b.checked_in_at, lang)})}
-                                    </span>
-                                    <Button
-                                      ref={buttonRef(b.id)}
-                                      variant="secondary"
-                                      className="w-full sm:w-auto"
-                                      disabled={busy}
-                                      onClick={() => void toggle(b)}
-                                    >
-                                      {t('bk.undoCheckIn')}
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <Button
-                                    ref={buttonRef(b.id)}
-                                    variant="primary"
-                                    className="w-full sm:w-auto"
-                                    disabled={busy}
-                                    onClick={() => void toggle(b)}
-                                  >
-                                    {t('bk.checkIn')}
-                                  </Button>
-                                )
-                              ) : (
-                                <span className="self-start sm:self-auto">
-                                  <BookingStatus status={b.status} />
-                                </span>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      </Panel>
-                    );
-                  })
-                ) : (
+              </Panel>
+              {searching ? (
+                <Panel
+                  flush
+                  title={
+                    <span className={numbers} aria-live="polite">
+                      {found.length === 1 ? t('ton.findCountOne') : t('ton.findCount', {count: found.length})}
+                    </span>
+                  }
+                >
+                  {found.length ? (
+                    <ul className={flushList}>{found.map(row)}</ul>
+                  ) : (
+                    <Empty
+                      flush
+                      icon={Search}
+                      action={
+                        sessions.length ? (
+                          <Button variant="secondary" onClick={() => setWalkIn(true)}>
+                            {t('walk.open')}
+                          </Button>
+                        ) : null
+                      }
+                    >
+                      {t('ton.findNone')}
+                    </Empty>
+                  )}
+                </Panel>
+              ) : !bookings.length ? (
+                <Panel>
+                  <Empty
+                    icon={CalendarX}
+                    action={
+                      <Link to="/equipo/" className={buttonVariants({variant: 'secondary'})}>
+                        {t('ton.viewCalendar')}
+                      </Link>
+                    }
+                  >
+                    {t('ton.empty')}
+                  </Empty>
+                </Panel>
+              ) : (
+                <>
                   <Panel>
-                    <Empty>{t('ton.noneHere')}</Empty>
+                    <div className="flex flex-col gap-3">
+                      <p
+                        ref={summary}
+                        tabIndex={-1}
+                        className={cn('text-base font-semibold leading-6 text-ink focus:outline-none', numbers)}
+                        aria-live="polite"
+                      >
+                        {t('ton.summary', {arrived, total})}
+                      </p>
+                      <Meter value={arrived} max={total} className="w-full" />
+                    </div>
                   </Panel>
-                )}
-              </motion.div>
+                  <div>
+                    <Switch
+                      value={filter}
+                      onChange={setFilter}
+                      label={t('ton.view')}
+                      options={[
+                        {
+                          value: 'waiting',
+                          label: <span className={numbers}>{t('ton.waiting', {count: waiting.length})}</span>,
+                        },
+                        {
+                          value: 'arrived',
+                          label: <span className={numbers}>{t('ton.arrivedTab', {count: came.length})}</span>,
+                        },
+                        {value: 'all', label: t('ton.all')},
+                      ]}
+                    />
+                  </div>
+                  {/* A filter change shows its groups at once (no replayed entry). */}
+                  <motion.div initial={false} animate="show" className="flex flex-col gap-6">
+                    {groups.size ? (
+                      [...groups.values()].map(list => {
+                        const first = list[0];
+                        const all = bookings.filter(b => b.session_id === first.session_id);
+                        const sessionConfirmed = all.filter(b => b.status === 'confirmed' || b.status === 'fulfilled');
+                        return (
+                          <Panel
+                            key={first.session_id}
+                            flush
+                            title={
+                              <span className={numbers}>
+                                {first.starts_at ? `${formatTime(first.starts_at, lang)} · ` : ''}
+                                {first.title_es}
+                              </span>
+                            }
+                            actions={
+                              <span className={cn(helper, numbers)}>
+                                {t('ton.sessionArrived', {
+                                  arrived: counted(sessionConfirmed.filter(b => b.checked_in_at)),
+                                  total: counted(sessionConfirmed),
+                                })}
+                              </span>
+                            }
+                          >
+                            <ul className={flushList}>{list.map(row)}</ul>
+                          </Panel>
+                        );
+                      })
+                    ) : (
+                      <Panel>
+                        <Empty>{t('ton.noneHere')}</Empty>
+                      </Panel>
+                    )}
+                  </motion.div>
+                </>
+              )}
+              <WalkInSheet
+                open={walkIn}
+                onOpenChange={setWalkIn}
+                sessions={sessions}
+                onSaved={() => void reload(true)}
+              />
             </div>
           );
         }}
