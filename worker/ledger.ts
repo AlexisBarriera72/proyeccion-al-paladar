@@ -34,6 +34,11 @@ export interface Binding {
 export interface ActionSpec {
   /** Scalar JSON of the target: "before" at claim time, "after" in the audit row. */
   snapshot: Sql;
+  /**
+   * The audit row's "after", when it isn't the target's snapshot: a create targets its session
+   * (or has nothing before it), so its "after" is the row it made.
+   */
+  after?: Sql;
   /** The action's statements. Each must include `guard` in its WHERE. */
   writes: (guard: Sql) => Sql[];
   /** True when the target now carries this mutation (the write applied). */
@@ -96,7 +101,7 @@ export function mutationStatements(binding: Binding, spec: ActionSpec, now: numb
         outcome_json = json_object('reason', ${spec.rejectReason})
       WHERE mutation_id = ${binding.mutationId} AND state = 'claimed' AND ${bindingMatches('mutations', binding)}`,
     sql`INSERT INTO audit_events (mutation_id, actor, action, target_type, target_id, before_json, after_json, at)
-      SELECT m.mutation_id, m.actor, m.action, m.target_type, m.target_id, m.before_json, ${spec.snapshot}, ${now}
+      SELECT m.mutation_id, m.actor, m.action, m.target_type, m.target_id, m.before_json, ${spec.after ?? spec.snapshot}, ${now}
       FROM mutations AS m
       WHERE m.mutation_id = ${binding.mutationId} AND m.state = 'applied' AND ${bindingMatches('m', binding)}
       ON CONFLICT (mutation_id) DO NOTHING`,

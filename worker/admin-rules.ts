@@ -64,6 +64,7 @@ export function createSession(p: {
   const checks = referencesExist(f);
   return {
     snapshot: raw('NULL'),
+    after: sessionSnapshot(p.id),
     writes: guard => [
       sql`INSERT INTO sessions (id, experience_id, venue_id, starts_at, ends_at, capacity, blocked_seats, party_min, party_max,
           booking_mode, price_status, price_cents, currency, policy_version_id, low_seats_threshold, state, synthetic,
@@ -88,10 +89,15 @@ export function updateSession(p: {
   actor: string;
   mutationId: string;
   now: number;
+  /** Not the owner: capacity and blocked seats must stay as they are, checked inside the write. */
+  capacityLocked?: boolean;
 }): ActionSpec {
   const f = p.fields;
   const checks: Check[] = [
     version(p.expectedVersion, 's'),
+    ...(p.capacityLocked
+      ? [{code: 'owner_only', when: sql`(s.capacity IS ${f.capacity} AND s.blocked_seats = ${f.blockedSeats})`}]
+      : []),
     {code: 'session_closed', when: raw(`s.state IN ('draft', 'published')`)},
     ...referencesExist(f),
     {
@@ -225,6 +231,7 @@ export function saveExperience(p: {
       ],
       appliedWhen: rowCarries('experiences', p.id, p.mutationId),
       rejectReason: sql`'already_exists'`,
+      after: rowSnapshot('experiences', p.id),
       outcome: rowSnapshot('experiences', p.id),
     };
   }
@@ -273,6 +280,7 @@ export function saveVenue(p: {
       ],
       appliedWhen: rowCarries('venues', p.id, p.mutationId),
       rejectReason: sql`'already_exists'`,
+      after: rowSnapshot('venues', p.id),
       outcome: rowSnapshot('venues', p.id),
     };
   }
@@ -331,6 +339,7 @@ export function savePolicyDraft(p: {
       ],
       appliedWhen: rowCarries('policy_versions', p.id, p.mutationId),
       rejectReason: sql`'already_exists'`,
+      after: rowSnapshot('policy_versions', p.id),
       outcome: rowSnapshot('policy_versions', p.id),
     };
   }

@@ -69,6 +69,7 @@ interface PolicyRow {
   state: 'draft' | 'approved' | 'retired';
   public_announcement: number;
   effective_from: number | null;
+  effective_until: number | null;
   source_url: string | null;
   source_note: string | null;
 }
@@ -188,14 +189,18 @@ export async function publicSession(db: Db, now: number, id: string, anyState = 
 /** /politicas/: approved terms (newest first, then retired ones) and announced drafts. */
 export async function publicPolicies(
   db: Db,
+  now: number,
 ): Promise<{current: PublicPolicy[]; earlier: PublicPolicy[]; announced: PublicPolicy[]}> {
   const rows = await all<PolicyRow>(
     db,
     sql`SELECT * FROM policy_versions ORDER BY COALESCE(effective_from, created_at) DESC`,
   );
-  const approved = rows.filter(row => row.state === 'approved').map(row => toPublicPolicy(row)!);
+  // In force: approved and not past its end date. Approved terms that have ended are listed with
+  // the earlier versions, as the rules no longer apply them to any booking.
+  const ended = (row: PolicyRow) => row.effective_until !== null && row.effective_until <= now;
+  const approved = rows.filter(row => row.state === 'approved' && !ended(row)).map(row => toPublicPolicy(row)!);
   const earlier = rows
-    .filter(row => row.state === 'retired')
+    .filter(row => row.state === 'retired' || (row.state === 'approved' && ended(row)))
     .map(row => ({...toPublicPolicy({...row, state: 'approved'})!, state: 'approved' as const}));
   const announced = rows
     .filter(row => row.state === 'draft' && row.public_announcement)

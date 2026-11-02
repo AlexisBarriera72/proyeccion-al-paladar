@@ -15,13 +15,20 @@ const optionalText = (max: number) =>
 
 const PHONE = /^[0-9+()\-.\s]{7,20}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// One-line fields (a name, a phone or an email) carry no control characters, such as a carriage
+// return that a spreadsheet would read as a new row.
+const SINGLE_LINE = /^[^\u0000-\u001f\u007f]*$/;
+const leadName = z.string().trim().min(2).max(80).regex(SINGLE_LINE);
+const contactValue = z.string().trim().min(3).max(120).regex(SINGLE_LINE);
+const contactValid = (c: {contactKind: 'phone' | 'email'; contactValue: string}) =>
+  c.contactKind === 'phone' ? PHONE.test(c.contactValue) : EMAIL.test(c.contactValue);
 
 export const contactSchema = z
   .object({
     contactKind: z.enum(['phone', 'email']),
-    contactValue: z.string().trim().min(3).max(120),
+    contactValue,
   })
-  .refine(c => (c.contactKind === 'phone' ? PHONE.test(c.contactValue) : EMAIL.test(c.contactValue)), {
+  .refine(contactValid, {
     message: 'contact_invalid',
     path: ['contactValue'],
   });
@@ -38,15 +45,15 @@ export const createBookingSchema = z
     intent: z.enum(['reserve', 'request']),
     sessionId: id,
     partySize: z.number().int().min(1).max(60),
-    leadName: z.string().trim().min(2).max(80),
+    leadName,
     contactKind: z.enum(['phone', 'email']),
-    contactValue: z.string().trim().min(3).max(120),
+    contactValue,
     note: optionalText(280),
     token: z.string().regex(TOKEN),
     terms: termsSchema.nullable(),
     acceptedTerms: z.boolean(),
   })
-  .refine(b => (b.contactKind === 'phone' ? PHONE.test(b.contactValue) : EMAIL.test(b.contactValue)), {
+  .refine(contactValid, {
     message: 'contact_invalid',
     path: ['contactValue'],
   })
@@ -107,41 +114,48 @@ export const manualBookingSchema = z
   .object({
     sessionId: id,
     partySize: z.number().int().min(1).max(60),
-    leadName: z.string().trim().min(2).max(80),
+    leadName,
     contactKind: z.enum(['phone', 'email']),
-    contactValue: z.string().trim().min(3).max(120),
+    contactValue,
     note: optionalText(280),
     source: z.enum(['instagram_dm', 'phone', 'in_person', 'other']),
   })
-  .refine(b => (b.contactKind === 'phone' ? PHONE.test(b.contactValue) : EMAIL.test(b.contactValue)), {
+  .refine(contactValid, {
     message: 'contact_invalid',
     path: ['contactValue'],
   });
 
 const versioned = {expectedVersion: z.number().int().min(1)};
-export const bookingActionSchema = z.discriminatedUnion('action', [
-  z.object({action: z.literal('confirm'), ...versioned}),
-  z.object({action: z.literal('cancel'), ...versioned}),
-  z.object({action: z.literal('resize'), ...versioned, partySize: z.number().int().min(1).max(60)}),
-  z.object({action: z.literal('move'), ...versioned, destination: id}),
-  z.object({action: z.literal('resolve_same'), ...versioned}),
-  z.object({action: z.literal('resolve_other'), ...versioned, destination: id}),
-  z.object({action: z.literal('check_in'), ...versioned}),
-  z.object({action: z.literal('undo_check_in'), ...versioned}),
-  z.object({action: z.literal('fulfilled'), ...versioned}),
-  z.object({action: z.literal('no_show'), ...versioned}),
-  z.object({action: z.literal('propose_terms'), ...versioned, sessionId: id}),
-  z.object({action: z.literal('reissue_link'), ...versioned, token: z.string().regex(TOKEN)}),
-  z.object({
-    action: z.literal('edit'),
-    ...versioned,
-    partySize: z.number().int().min(1).max(60),
-    leadName: z.string().trim().min(2).max(80),
-    contactKind: z.enum(['phone', 'email']),
-    contactValue: z.string().trim().min(3).max(120),
-    note: optionalText(280),
-  }),
-]);
+export const bookingActionSchema = z
+  .discriminatedUnion('action', [
+    z.object({action: z.literal('confirm'), ...versioned}),
+    z.object({action: z.literal('cancel'), ...versioned}),
+    z.object({action: z.literal('resize'), ...versioned, partySize: z.number().int().min(1).max(60)}),
+    z.object({action: z.literal('move'), ...versioned, destination: id}),
+    z.object({action: z.literal('resolve_same'), ...versioned}),
+    z.object({action: z.literal('resolve_other'), ...versioned, destination: id}),
+    z.object({action: z.literal('check_in'), ...versioned}),
+    z.object({action: z.literal('undo_check_in'), ...versioned}),
+    z.object({action: z.literal('fulfilled'), ...versioned}),
+    z.object({action: z.literal('no_show'), ...versioned}),
+    z.object({action: z.literal('propose_terms'), ...versioned, sessionId: id}),
+    z.object({action: z.literal('reissue_link'), ...versioned, token: z.string().regex(TOKEN)}),
+    z.object({
+      action: z.literal('edit'),
+      ...versioned,
+      partySize: z.number().int().min(1).max(60),
+      leadName,
+      contactKind: z.enum(['phone', 'email']),
+      contactValue,
+      note: optionalText(280),
+    }),
+  ])
+  .superRefine((body, ctx) => {
+    // An edited contact meets the same format rule as a new one.
+    if (body.action === 'edit' && !contactValid(body)) {
+      ctx.addIssue({code: 'custom', message: 'contact_invalid', path: ['contactValue']});
+    }
+  });
 export type BookingActionBody = z.infer<typeof bookingActionSchema>;
 
 export const PAYMENT_METHODS = ['ath_movil', 'efectivo', 'tarjeta', 'transferencia', 'otro', 'prueba'] as const;

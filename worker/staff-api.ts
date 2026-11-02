@@ -115,10 +115,18 @@ async function sessionsForStaff(db: Db, now: number, from: number | null, to: nu
 }
 
 const csvCell = (value: unknown) => {
-  let text = value === null || value === undefined ? '' : String(value);
-  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`; // no formulas in spreadsheets
-  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  // One line per row: a line break inside a value becomes a space, so no part of a value can start
+  // a row of its own; then no cell may start like a formula.
+  let text = (value === null || value === undefined ? '' : String(value)).replace(/[\r\n]+/g, ' ');
+  if (/^[=+\-@\t]/.test(text)) text = `'${text}`; // no formulas in spreadsheets
+  return /[",]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 };
+
+/** A new row's id, from the request's mutation ID: a retry of the same create names the same row. */
+async function newId(prefix: string, mutationId: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(mutationId)));
+  return `${prefix}-${[...digest.slice(0, 5)].map(byte => byte.toString(16).padStart(2, '0')).join('')}`;
+}
 
 export async function handleStaff(request: Request, url: URL, ctx: Context): Promise<Response> {
   const path = url.pathname.replace(/\/+$/, '');
@@ -358,7 +366,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
   if (path === '/api/equipo/sessions') {
     const parsed = sessionCreateSchema.safeParse(body.value);
     if (!parsed.success) return invalid(parsed.error.issues);
-    const id = `ses-${crypto.randomUUID().slice(0, 8)}`;
+    const id = await newId('ses', mutationId);
     const fields = parsed.data.fields as SessionFields;
     if (!isOwner && fields.capacity !== null) return ownerOnly(); // capacity is the owner's decision
     return answer(
@@ -401,7 +409,8 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
       sql`SELECT capacity, blocked_seats, version FROM sessions WHERE id = ${id}`,
     );
     if (!current) return error('not_found', 404);
-    // Capacity is the owner's decision. The version check keeps this comparison current.
+    // Capacity is the owner's decision. This early answer is for the common case; the write itself
+    // checks it again (capacityLocked), so a change made in between can't be undone by staff.
     if (!isOwner && (current.capacity !== fields.capacity || current.blocked_seats !== fields.blockedSeats)) {
       return ownerOnly();
     }
@@ -413,9 +422,16 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
         targetId: id,
         expectedVersion: parsed.data.expectedVersion,
         payload: fields,
-        // The version the capacity comparison above was made against.
         makeSpec: mid =>
-          updateSession({id, fields, expectedVersion: parsed.data.expectedVersion, actor, mutationId: mid, now}),
+          updateSession({
+            id,
+            fields,
+            expectedVersion: parsed.data.expectedVersion,
+            actor,
+            mutationId: mid,
+            now,
+            capacityLocked: !isOwner,
+          }),
       }),
     );
   }
@@ -595,7 +611,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
       const parsed = experienceSchema.safeParse(body.value);
       if (!parsed.success) return invalid(parsed.error.issues);
       if (!isOwner && parsed.data.fields.status === 'approved') return ownerOnly();
-      const id = existingId ?? `exp-${crypto.randomUUID().slice(0, 8)}`;
+      const id = existingId ?? (await newId('exp', mutationId));
       const {expectedVersion, fields} = parsed.data;
       if (existingId && expectedVersion === null) return error('expected_version_required', 400);
       return answer(
@@ -614,7 +630,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
     if (kind === 'venues') {
       const parsed = venueSchema.safeParse(body.value);
       if (!parsed.success) return invalid(parsed.error.issues);
-      const id = existingId ?? `venue-${crypto.randomUUID().slice(0, 8)}`;
+      const id = existingId ?? (await newId('venue', mutationId));
       const {expectedVersion, fields} = parsed.data;
       if (existingId && expectedVersion === null) return error('expected_version_required', 400);
       return answer(
@@ -647,7 +663,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
     }
     const parsed = policySchema.safeParse(body.value);
     if (!parsed.success) return invalid(parsed.error.issues);
-    const id = existingId ?? `pol-${crypto.randomUUID().slice(0, 8)}`;
+    const id = existingId ?? (await newId('pol', mutationId));
     const {expectedVersion, fields} = parsed.data;
     if (existingId && expectedVersion === null) return error('expected_version_required', 400);
     return answer(

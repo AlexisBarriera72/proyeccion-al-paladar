@@ -61,7 +61,7 @@ export async function handlePublic(request: Request, url: URL, ctx: Context): Pr
     return session ? json({session}) : error('not_found', 404);
   }
 
-  if (method === 'GET' && path === '/api/public/policies') return json(await publicPolicies(ctx.db));
+  if (method === 'GET' && path === '/api/public/policies') return json(await publicPolicies(ctx.db, ctx.now));
 
   if (method !== 'POST') return error('not_found', 404);
   const mutationId = mutationIdOf(request);

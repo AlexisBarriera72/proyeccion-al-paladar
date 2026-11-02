@@ -22,8 +22,10 @@ import {
   cancel,
   checkIn,
   confirm,
+  editRequest,
   markOutcome,
   moveConfirmed,
+  moveRequest,
   proposeTerms,
   recordPayment,
   resize,
@@ -526,4 +528,174 @@ test('an unpublished, cancelled, archived or past session takes no new bookings 
   const request = await inquire(db, 'ses-cancelled-inq', 2);
   assert.equal(request.result.kind === 'rejected' && request.result.reason, 'session_not_open');
   assert.equal(count(db, 'bookings'), 0);
+});
+
+test('terms already accepted carry over a same-terms move: pending, move, pay, confirm', async () => {
+  const db = freshDb();
+  session(db, 'ses-pre2', {price: 2500, policy: 'pol-prepay', startsAt: SHOW + 3 * DAY}); // the same terms
+  const {input} = await reserve(db, 'ses-pre', 2); // pending payment at $25, accepted for ses-pre
+  const id = input.bookingId;
+  const v1 = versionOf(db, id);
+  const moved = await run(
+    db,
+    'move',
+    id,
+    v1,
+    mid =>
+      moveRequest({
+        id,
+        expectedVersion: v1,
+        mutationId: mid,
+        now: NOW,
+        destination: 'ses-pre2',
+        status: 'pending_payment',
+      }),
+    {d: 'ses-pre2'},
+  );
+  assert.equal(moved.kind, 'applied', JSON.stringify(moved));
+  await pay(db, id, 'payment', 5000);
+  const v2 = versionOf(db, id);
+  const confirmed = await run(db, 'confirm', id, v2, mid =>
+    confirm({id, expectedVersion: v2, mutationId: mid, now: NOW}),
+  );
+  assert.equal(confirmed.kind, 'applied', JSON.stringify(confirmed));
+  assert.equal(booking(db, id).status, 'confirmed');
+  assert.equal(confirmedSeats(db, 'ses-pre2'), 2);
+});
+
+test('an older acceptance for a session doesn’t outrank the guest’s latest acceptance', async () => {
+  const db = freshDb();
+  const {input} = await reserve(db, 'ses-pre', 2); // accepted ses-pre's terms ($25)
+  const id = input.bookingId;
+  await pay(db, id, 'payment', 6000);
+  const v1 = versionOf(db, id);
+  assert.equal(
+    (await run(db, 'confirm', id, v1, mid => confirm({id, expectedVersion: v1, mutationId: mid, now: NOW}))).kind,
+    'applied',
+  );
+  await guestAccept(db, id, 'ses-pricier'); // later accepted ses-pricier's terms ($30)
+  const v2 = versionOf(db, id);
+  const there = await run(
+    db,
+    'move',
+    id,
+    v2,
+    mid => moveConfirmed({id, expectedVersion: v2, mutationId: mid, now: NOW, destination: 'ses-pricier'}),
+    {d: 'ses-pricier'},
+  );
+  assert.equal(there.kind, 'applied', JSON.stringify(there));
+  // Moving back would relock the $25 terms, which the guest's latest acceptance ($30) replaced.
+  const v3 = versionOf(db, id);
+  const back = await run(
+    db,
+    'move',
+    id,
+    v3,
+    mid => moveConfirmed({id, expectedVersion: v3, mutationId: mid, now: NOW, destination: 'ses-pre'}),
+    {d: 'ses-pre'},
+  );
+  assert.equal(back.kind === 'rejected' && back.reason, 'terms_not_accepted');
+  assert.equal(booking(db, id).session_id, 'ses-pricier');
+});
+
+test('a pending booking moved to terms with no prepayment becomes confirmed, never “pending payment”', async () => {
+  const db = freshDb();
+  const {input} = await reserve(db, 'ses-pre', 2); // pending payment (prepaid terms)
+  const id = input.bookingId;
+  await guestAccept(db, id, 'ses-conf'); // ses-conf: not charged, no prepayment
+  const v = versionOf(db, id);
+  const moved = await run(
+    db,
+    'move',
+    id,
+    v,
+    mid =>
+      moveRequest({
+        id,
+        expectedVersion: v,
+        mutationId: mid,
+        now: NOW,
+        destination: 'ses-conf',
+        status: 'pending_payment',
+      }),
+    {d: 'ses-conf'},
+  );
+  assert.equal(moved.kind, 'applied', JSON.stringify(moved));
+  const after = booking(db, id);
+  assert.equal(after.session_id, 'ses-conf');
+  assert.equal(after.accepted_policy_version_id, 'pol-open');
+  assert.equal(after.status, 'confirmed', 'its terms need no payment, so it holds its seats');
+  assert.equal(confirmedSeats(db, 'ses-conf'), 2);
+});
+
+test('money: a payment in another currency than the booking’s is refused', async () => {
+  const db = freshDb();
+  const {input} = await reserve(db, 'ses-pre', 2); // locked at 2500 USD
+  const id = input.bookingId;
+  const paymentId = randomUUID();
+  const result = await act(
+    db,
+    {
+      action: 'record_payment',
+      targetType: 'booking',
+      targetId: id,
+      payload: {kind: 'payment', amountCents: 5000, currency: 'EUR'},
+    },
+    mid =>
+      recordPayment({
+        paymentId,
+        bookingId: id,
+        kind: 'payment',
+        method: 'ath_movil',
+        amountCents: 5000,
+        currency: 'EUR',
+        externalReference: null,
+        reversesPaymentId: null,
+        note: null,
+        recordedBy: 'owner@example.com',
+        mutationId: mid,
+        now: NOW,
+      }),
+  );
+  assert.equal(result.kind === 'rejected' && result.reason, 'currency_mismatch');
+  assert.equal(count(db, 'payments'), 0);
+  // The booking's own currency is accepted.
+  assert.equal((await pay(db, id, 'payment', 5000)).result.kind, 'applied');
+});
+
+test('editing a request keeps the contact rules a new request must meet', async () => {
+  const db = freshDb();
+  db.run(`UPDATE settings SET value = 'phone' WHERE key = 'required_contact'`);
+  const {input} = await inquire(db, 'ses-inq', 2, true, {contactKind: 'phone', contactValue: '787-555-0101'});
+  const id = input.bookingId;
+  const edit = (kind: 'phone' | 'email', value: string, leadName = 'Cliente de prueba 01') => {
+    const v = versionOf(db, id);
+    return run(
+      db,
+      'edit',
+      id,
+      v,
+      mid =>
+        editRequest({
+          id,
+          expectedVersion: v,
+          mutationId: mid,
+          now: NOW,
+          status: 'inquiry',
+          partySize: 2,
+          sizeChanged: false,
+          leadName,
+          contactKind: kind,
+          contactValue: value,
+          note: null,
+        }),
+      {kind, value, leadName},
+    );
+  };
+  const toEmail = await edit('email', 'cliente@example.com');
+  assert.equal(toEmail.kind === 'rejected' && toEmail.reason, 'contact_kind_not_accepted');
+  // Keeping the same kind is fine, even if the setting changes later.
+  db.run(`UPDATE settings SET value = 'email' WHERE key = 'required_contact'`);
+  const sameKind = await edit('phone', '787-555-0102', 'Cliente de prueba 02');
+  assert.equal(sameKind.kind, 'applied', JSON.stringify(sameKind));
 });

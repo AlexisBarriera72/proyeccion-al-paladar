@@ -282,3 +282,130 @@ test('demo HTML is marked before any API call, so the banner never appears late'
   const live = await call(env({DEMO_MODE: '0'}), '/politicas/');
   assert.doesNotMatch(await live.response.text(), /data-demo/);
 });
+
+test('retrying a staff create with the same key replays it instead of creating a second one', async () => {
+  const db = freshDb();
+  const e = env({}, db);
+  const k = key();
+  const body = {
+    fields: {
+      experienceId: 'exp',
+      venueId: 'venue',
+      startsAt: NOW + 40 * 24 * 60 * 60 * 1000,
+      endsAt: null,
+      capacity: 20,
+      blockedSeats: 0,
+      partyMin: 1,
+      partyMax: 8,
+      bookingMode: 'confirmed',
+      priceStatus: 'not_charged',
+      priceCents: null,
+      currency: null,
+      policyVersionId: 'pol-open',
+      lowSeatsThreshold: null,
+    },
+  };
+  const before = db.get<{n: number}>(`SELECT COUNT(*) AS n FROM sessions`)!.n;
+  const first = await call(e, '/api/equipo/sessions', {as: 'owner@example.com', key: k, body});
+  assert.equal(first.response.status, 200, JSON.stringify(first.json));
+  const retry = await call(e, '/api/equipo/sessions', {as: 'owner@example.com', key: k, body});
+  assert.equal(retry.response.status, 200, JSON.stringify(retry.json));
+  assert.equal(retry.json.replayed, true);
+  assert.equal(db.get<{n: number}>(`SELECT COUNT(*) AS n FROM sessions`)!.n, before + 1);
+
+  const experience = {
+    expectedVersion: null,
+    fields: {
+      titleEs: 'Nueva',
+      titleEn: null,
+      descriptionEs: null,
+      descriptionEn: null,
+      inclusionsEs: null,
+      inclusionsEn: null,
+      photoSlot: null,
+      status: 'draft',
+    },
+  };
+  const k2 = key();
+  const made = await call(e, '/api/equipo/experiences', {as: 'owner@example.com', key: k2, body: experience});
+  assert.equal(made.response.status, 200, JSON.stringify(made.json));
+  const again = await call(e, '/api/equipo/experiences', {as: 'owner@example.com', key: k2, body: experience});
+  assert.equal(again.json.replayed, true, JSON.stringify(again.json));
+});
+
+test('the CSV export never lets a spreadsheet read a cell as a formula, even after a line break', async () => {
+  const db = freshDb();
+  const e = env({}, db);
+  // The public form refuses control characters in a name.
+  const {json: session} = await call(e, '/api/public/sessions/ses-conf');
+  const refused = await call(e, '/api/public/bookings', {
+    key: key(),
+    body: {
+      intent: 'reserve',
+      sessionId: 'ses-conf',
+      partySize: 2,
+      leadName: "Ana\r=cmd|' /C calc'!A0",
+      contactKind: 'email',
+      contactValue: 'ana@example.com',
+      note: null,
+      token: token(),
+      terms: session.session.terms,
+      acceptedTerms: true,
+    },
+  });
+  assert.equal(refused.response.status, 400);
+  // A row that already holds one (from anywhere) is still exported safely.
+  db.run(
+    `INSERT INTO bookings (id, reference, session_id, party_size, lead_name, contact_kind, contact_value, status, source,
+       version, created_at, updated_at) VALUES ('b-csv', 'PAP-CSV001', 'ses-conf', 2, ?, 'phone', ?, 'confirmed', 'web', 1, ?, ?)`,
+    "Ana\r=cmd|' /C calc'!A0",
+    '7875550\r+1+1',
+    NOW,
+    NOW,
+  );
+  const csv = await call(e, '/api/equipo/export.csv?session=ses-conf', {as: 'owner@example.com'});
+  const text = await csv.response.text();
+  const lines = text.split(/\r\n|\r|\n/);
+  for (const line of lines) {
+    for (const cell of line.split(','))
+      assert.doesNotMatch(cell, /^"?[=+\-@]/, `a cell starts like a formula: ${cell}`);
+  }
+  assert.ok(text.includes('Ana'));
+});
+
+test('a booking’s history starts with its creation', async () => {
+  const db = freshDb();
+  const e = env({}, db);
+  const made = await reserveVia(e, token());
+  assert.equal(made.response.status, 200);
+  const event = db.get<{after_json: string | null}>(
+    `SELECT after_json FROM audit_events WHERE action = 'create_reservation'`,
+  )!;
+  assert.equal(JSON.parse(event.after_json ?? 'null')?.id, made.json.bookingId);
+  const detail = await call(e, `/api/equipo/bookings/${made.json.bookingId}`, {as: 'owner@example.com'});
+  assert.deepEqual(
+    detail.json.audit.map((a: {action: string}) => a.action),
+    ['create_reservation'],
+  );
+});
+
+test('terms past their end date are listed as earlier, never as in force', async () => {
+  const db = freshDb();
+  const e = env({}, db);
+  db.run(
+    `INSERT INTO policy_versions (id, title, text_es, state, applies_to, full_payment, cutoff_rule, effective_from, effective_until,
+       approved_at, approved_by, created_at, updated_at, updated_by)
+     VALUES ('pol-ended', 'Terminada', 'Términos que ya terminaron', 'approved', 'booking_time', 0, 'none', ?, ?, ?, 'owner@example.com', ?, ?, 'test')`,
+    NOW - 60 * 24 * 60 * 60 * 1000,
+    NOW - 24 * 60 * 60 * 1000,
+    NOW,
+    NOW,
+    NOW,
+  );
+  const {json} = await call(e, '/api/public/policies');
+  assert.ok(!json.current.some((p: {id: string}) => p.id === 'pol-ended'), 'not under Vigentes');
+  assert.ok(
+    json.earlier.some((p: {id: string}) => p.id === 'pol-ended'),
+    'under earlier versions',
+  );
+});

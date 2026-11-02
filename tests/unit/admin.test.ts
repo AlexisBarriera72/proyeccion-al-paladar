@@ -364,3 +364,34 @@ test('the demo seed loads as a SQL file and dates are upcoming', () => {
   assert.equal(db.get<{n: number}>(`SELECT COUNT(*) AS n FROM sessions WHERE synthetic = 0`)!.n, 0);
   assert.ok(db.rows<{title_es: string}>(`SELECT title_es FROM experiences`).every(e => e.title_es.startsWith('DEMO')));
 });
+
+test('a staff edit can’t change capacity, even when the owner changes it between the read and the write', async () => {
+  const db = freshDb();
+  // The staff member's edit was prepared against capacity 10 (ses-conf); the owner has since set 30.
+  db.run(`UPDATE sessions SET capacity = 30, version = version + 1 WHERE id = 'ses-conf'`);
+  const v = version(db, 'sessions', 'ses-conf');
+  const staffEdit = fields({startsAt: SHOW, endsAt: null, capacity: 10});
+  const result = await act(
+    db,
+    {
+      action: 'session_update',
+      targetType: 'session',
+      targetId: 'ses-conf',
+      expectedVersion: v,
+      actor: 'staff:staff@example.com',
+      payload: staffEdit,
+    },
+    mid =>
+      updateSession({
+        id: 'ses-conf',
+        fields: staffEdit,
+        expectedVersion: v,
+        actor: 'staff:staff@example.com',
+        mutationId: mid,
+        now: NOW,
+        capacityLocked: true,
+      }),
+  );
+  assert.equal(result.kind === 'rejected' && result.reason, 'owner_only');
+  assert.equal(db.get<{capacity: number}>(`SELECT capacity FROM sessions WHERE id = 'ses-conf'`)!.capacity, 30);
+});

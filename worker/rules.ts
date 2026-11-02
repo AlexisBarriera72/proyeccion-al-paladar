@@ -115,14 +115,23 @@ export const sameTerms = (b = 'b', s = 's') =>
       ` AND ${b}.unit_price_cents IS ${s}.price_cents AND ${b}.currency IS ${s}.currency)`,
   );
 
-/** The booking's latest acceptance for session `s` matches `s`'s current terms. */
+/** An acceptance row `ta` for exactly session `s`'s current terms. */
+const acceptanceMatches = (s: string) =>
+  `ta.policy_version_id IS ${s}.policy_version_id AND ta.price_status IS ${s}.price_status` +
+  ` AND ta.unit_price_cents IS ${s}.price_cents AND ta.currency IS ${s}.currency`;
+
+/**
+ * The guest has accepted session `s`'s current terms: they are the booking's locked terms, or
+ * they match the guest's latest acceptance, whichever session it was made for. So a move to a
+ * session with the same terms needs no new acceptance, and an older acceptance never outranks
+ * a newer one for different terms.
+ */
 export const accepted = (b = 'b', s = 's'): Check => ({
   code: 'terms_not_accepted',
-  when: A(`EXISTS (SELECT 1 FROM term_acceptances ta WHERE ta.rowid = (
-      SELECT ta2.rowid FROM term_acceptances ta2 WHERE ta2.booking_id = ${b}.id AND ta2.session_id = ${s}.id
+  when: sql`(${sameTerms(b, s)} OR ${A(`EXISTS (SELECT 1 FROM term_acceptances ta WHERE ta.rowid = (
+      SELECT ta2.rowid FROM term_acceptances ta2 WHERE ta2.booking_id = ${b}.id
       ORDER BY ta2.accepted_at DESC, ta2.rowid DESC LIMIT 1)
-    AND ta.policy_version_id IS ${s}.policy_version_id AND ta.price_status IS ${s}.price_status
-    AND ta.unit_price_cents IS ${s}.price_cents AND ta.currency IS ${s}.currency)`),
+    AND ${acceptanceMatches(s)})`)})`,
 });
 
 /** Money received for a booking, net of refunds; a reversal undoes the entry it points to. */
@@ -171,11 +180,8 @@ export const tokenMatches = (digest: string): Check => ({
 const destinationExists: Check = {code: 'destination_not_found', when: A('d.id IS NOT NULL')};
 const notSameSession: Check = {code: 'same_session', when: A('d.id <> b.session_id')};
 
-/** Terms at the destination: the same as the locked ones, or a new acceptance of them. */
-const termsForDestination: Check = {
-  code: 'terms_not_accepted',
-  when: sql`(${sameTerms('b', 'd')} OR ${accepted('b', 'd').when})`,
-};
+/** Terms at the destination: the same as the locked ones, or the guest's latest acceptance. */
+const termsForDestination: Check = accepted('b', 'd');
 
 // ---------------------------------------------------------------- specs
 
@@ -194,9 +200,10 @@ const lockTermsOf = (alias: string) =>
       ` unit_price_cents = ${alias}.price_cents, currency = ${alias}.currency`,
   );
 
+/** When the guest last accepted session `alias`'s current terms (for any session), else the original time. */
 const latestAcceptanceAt = (alias: string) =>
   A(
-    `COALESCE((SELECT MAX(ta.accepted_at) FROM term_acceptances ta WHERE ta.booking_id = b.id AND ta.session_id = ${alias}.id), b.accepted_at)`,
+    `COALESCE((SELECT MAX(ta.accepted_at) FROM term_acceptances ta WHERE ta.booking_id = b.id AND ${acceptanceMatches(alias)}), b.accepted_at)`,
   );
 
 interface BookingUpdate {
@@ -313,6 +320,8 @@ function createBooking(input: CreateBookingInput, checks: Check[], status: Sql, 
     : A('NULL, NULL, NULL, NULL');
   return {
     snapshot: raw('NULL'),
+    // The history of the booking starts with the row this made.
+    after: bookingSnapshot(input.bookingId),
     writes: guard => [
       sql`INSERT INTO bookings (id, reference, session_id, party_size, lead_name, contact_kind, contact_value, note, status,
           source, token_digest, accepted_policy_version_id, terms_price_status, unit_price_cents, currency, accepted_at,
@@ -486,9 +495,17 @@ export function moveRequest(
           free(n, 0, 'd'),
           termsForDestination,
         ];
+  // A pending booking relocks the destination's terms. When those terms need no prepayment it is
+  // confirmed, as a new reservation under them would be (its seats were checked above); it never
+  // stays "pending payment" under terms that ask for no payment.
+  const noPrepay = A(
+    `EXISTS (SELECT 1 FROM policy_versions pp WHERE pp.id = d.policy_version_id AND pp.full_payment = 0)`,
+  );
   const relock =
     p.status === 'pending_payment'
-      ? sql`, ${lockTermsOf('d')}, accepted_at = CASE WHEN ${sameTerms('b', 'd')} THEN b.accepted_at ELSE ${latestAcceptanceAt('d')} END`
+      ? sql`, ${lockTermsOf('d')}, accepted_at = CASE WHEN ${sameTerms('b', 'd')} THEN b.accepted_at ELSE ${latestAcceptanceAt('d')} END,
+        status = CASE WHEN ${noPrepay} THEN 'confirmed' ELSE b.status END,
+        prev_status = CASE WHEN ${noPrepay} THEN b.status ELSE b.prev_status END`
       : raw('');
   return bookingUpdate({...p, set: sql`session_id = d.id, prev_session_id = b.session_id${relock}`, checks});
 }
@@ -514,7 +531,16 @@ export function editRequest(
     ...p,
     set: sql`party_size = ${p.partySize}, prev_party_size = b.party_size, lead_name = ${p.leadName},
       contact_kind = ${p.contactKind}, contact_value = ${p.contactValue}, note = ${p.note}`,
-    checks: [version(p.expectedVersion), statusIn([p.status]), ...sizeChecks],
+    checks: [
+      version(p.expectedVersion),
+      statusIn([p.status]),
+      // A new contact kind must be one a new request could use.
+      {
+        code: 'contact_kind_not_accepted',
+        when: sql`(b.contact_kind = ${p.contactKind} OR ${contactAllowed(p.contactKind).when})`,
+      },
+      ...sizeChecks,
+    ],
   });
 }
 
@@ -601,6 +627,11 @@ export interface PaymentInput {
  */
 export function recordPayment(p: PaymentInput): ActionSpec {
   const checks: Check[] = [
+    // Money is counted in one currency: the booking's locked one, else its session's.
+    {
+      code: 'currency_mismatch',
+      when: sql`${p.currency} = COALESCE(b.currency, (SELECT cs.currency FROM sessions cs WHERE cs.id = b.session_id), ${p.currency})`,
+    },
     {
       code: 'refund_exceeds_net',
       when:
