@@ -93,12 +93,11 @@ function ExceptionRow({
           title={t('exc.same')}
           body={t('bk.confirmBody')}
           confirmLabel={t('exc.same')}
-          disabled={busy}
+          busy={busy}
           onConfirm={() => onAct(booking, {action: 'resolve_same'})}
         />
         <InputAction
           label={t('exc.other')}
-          disabled={busy}
           busy={busy}
           canSend={Boolean(destination)}
           onSend={() => onAct(booking, {action: 'resolve_other', destination})}
@@ -117,7 +116,7 @@ function ExceptionRow({
           title={t('bk.cancel')}
           body={t('bk.cancelBody')}
           confirmLabel={t('bk.cancel')}
-          disabled={busy}
+          busy={busy}
           onConfirm={() => onAct(booking, {action: 'cancel'})}
         />
       </div>
@@ -293,7 +292,7 @@ export function Requests() {
                     <Button
                       variant="secondary"
                       className="w-full sm:w-auto sm:shrink-0"
-                      disabled={busy}
+                      busy={busy}
                       onClick={async () => {
                         const result = await run(`/api/equipo/requests/${r.id}/resolve`, {});
                         setNotice(outcome(result, t('req.resolved')));
@@ -418,7 +417,7 @@ export function Tonight() {
               ref={buttonRef(b.id)}
               variant="secondary"
               className="w-full sm:w-auto"
-              disabled={busy}
+              busy={busy}
               onClick={() => void toggle(b)}
             >
               {t('bk.undoCheckIn')}
@@ -429,7 +428,7 @@ export function Tonight() {
             ref={buttonRef(b.id)}
             variant="primary"
             className="w-full sm:w-auto"
-            disabled={busy}
+            busy={busy}
             onClick={() => void toggle(b)}
           >
             {t('bk.checkIn')}

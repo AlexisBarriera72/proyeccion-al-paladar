@@ -98,6 +98,7 @@ test('with Access everywhere (the demo), every path needs an Access identity', a
     '/api/public/config',
     '/funciones/ses-conf',
     '/reservacion/x',
+    '/reservacion/',
     '/equipo',
   ]) {
     const {response} = await call(e, path);
@@ -117,6 +118,8 @@ test('every Worker response carries the security headers', async () => {
     ['/api/nothing', {}],
     ['/', {}],
     ['/reservacion/abc', {}],
+    ['/reservacion/', {}],
+    ['/reservacion', {}],
     ['/equipo', {}],
     ['/equipo', {as: 'owner@example.com'}],
     ['/api/equipo/me', {}],
@@ -135,8 +138,11 @@ test('every Worker response carries the security headers', async () => {
       assert.equal(h.get('cache-control'), 'no-store', path);
     }
   }
-  const {response} = await call(e, '/reservacion/abc');
-  assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+  // The guest's page (its token is in the fragment, so the request is just /reservacion/).
+  for (const path of ['/reservacion/', '/reservacion', '/reservacion/abc']) {
+    const {response} = await call(e, path);
+    assert.equal(response.headers.get('referrer-policy'), 'no-referrer', path);
+  }
 });
 
 test('staff paths need a listed email; roles are enforced on the server', async () => {

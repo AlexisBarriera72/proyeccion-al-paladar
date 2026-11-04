@@ -4,10 +4,12 @@
 import {spawn, spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import {TEST_OWNER, prepareLocalDb, startWrangler} from './lib/local.ts';
+import {TEST_OWNER, migrateLocalDb, prepareLocalDb, startWrangler} from './lib/local.ts';
 
 const persist = path.resolve('.wrangler/dev-state');
+// A fresh demo with --reset (its dates start from today); otherwise the same data, migrated.
 if (process.argv.includes('--reset') || !fs.existsSync(persist)) prepareLocalDb(persist);
+else migrateLocalDb(persist);
 if (!fs.existsSync('dist/index.html')) spawnSync('npx', ['vite', 'build'], {stdio: 'inherit'});
 startWrangler(persist, 8787, true);
 const vite = spawn('npx', ['vite'], {stdio: 'inherit', env: {...process.env, PAP_DEV_STAFF: TEST_OWNER}});

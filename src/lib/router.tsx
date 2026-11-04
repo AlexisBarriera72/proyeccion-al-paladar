@@ -12,6 +12,8 @@ if (typeof window !== 'undefined') {
     navigated = true;
     notify();
   });
+  // The guest page's token lives in the fragment: a new link pasted on that page changes only it.
+  window.addEventListener('hashchange', notify);
 }
 
 export function navigate(to: string, options: {replace?: boolean; scroll?: boolean} = {}): void {
@@ -27,14 +29,14 @@ const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 
-export function useLocation(): {path: string; search: URLSearchParams} {
+export function useLocation(): {path: string; search: URLSearchParams; hash: string} {
   const href = useSyncExternalStore(
     subscribe,
-    () => location.pathname + location.search,
+    () => location.pathname + location.search + location.hash,
     () => '/',
   );
   const url = new URL(href, 'http://local');
-  return {path: url.pathname, search: url.searchParams};
+  return {path: url.pathname, search: url.searchParams, hash: url.hash};
 }
 
 /** True after the first in-app navigation (not on the first load). */

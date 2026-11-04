@@ -1246,7 +1246,7 @@ export function SessionPage({id}: {id: string}) {
                       title={t('ses.publish')}
                       body={t('ses.publishBody')}
                       confirmLabel={t('ses.publish')}
-                      disabled={busy}
+                      busy={busy}
                       onConfirm={() => transition(session, 'publish')}
                     />
                   ) : null}

@@ -1,6 +1,7 @@
-// "/reservacion/:token/": the guest's own page. The token in the path is the only key; the
-// server answers with the booking it belongs to, or says the link is no longer valid. Every
-// action sends a mutation ID kept in this tab, so a lost response can be retried safely.
+// "/reservacion/#<token>": the guest's own page. The token is the only key. It sits in the link's
+// fragment, so it never reaches a server log, and the page sends it in request bodies. The server
+// answers with the booking it belongs to, or says the link is no longer valid. Every action sends
+// a mutation ID kept in this tab, so a lost response can be retried safely.
 import {useCallback, useEffect, useId, useState, type FormEvent} from 'react';
 import {motion} from 'motion/react';
 import {CalendarDays, CircleX, ExternalLink, MapPin, MessageSquareText, RotateCw, Users} from 'lucide-react';
@@ -14,6 +15,7 @@ import {readJson, remove, writeJson} from '../lib/storage.ts';
 import {formatMoney, pick} from '../lib/format.ts';
 import {useEntry} from '../lib/motion.ts';
 import {Link} from '../lib/router.tsx';
+import {manageLink} from '../lib/links.ts';
 import {doorNumber, helper, inset, kicker, numbers, pageTitle, panel, sectionTitle} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
@@ -150,7 +152,7 @@ function Proposal({proposal, onAccept, busy}: {proposal: ManageProposal; onAccep
         </div>
       </dl>
       <PolicyBlock policy={proposal.session.policy} />
-      <Button variant="primary" onClick={onAccept} disabled={busy}>
+      <Button variant="primary" onClick={onAccept} busy={busy}>
         {busy ? t('flow.sending') : t('manage.acceptProposal')}
       </Button>
     </section>
@@ -372,18 +374,11 @@ export function ManagePage({token}: {token: string}) {
                 <p className="text-base leading-6 text-ink">{t(`bhelp.${b.status}`)}</p>
               </div>
               {b.status === 'confirmed' ? (
-                // The number the door asks for, large, with what we know about the text that carried it.
+                // The number the door asks for, large.
                 <div className={cn(inset, 'space-y-1')} data-door-number="">
                   <p className={cn(kicker, 'text-accent')}>{t('result.doorNumber')}</p>
                   <p className={cn(doorNumber, 'text-ink')}>{b.reference}</p>
                   <p className="text-sm font-medium leading-5 text-ink">{t('result.doorHelp')}</p>
-                  {b.text?.status === 'sent' ? (
-                    <p className={helper}>{t('manage.textSent', {to: b.text.to})}</p>
-                  ) : b.text?.status === 'failed' ? (
-                    <p className={helper}>{t('manage.textFailed', {to: b.text.to})}</p>
-                  ) : b.text?.status === 'unknown' ? (
-                    <p className={helper}>{t('manage.textUnknown', {to: b.text.to})}</p>
-                  ) : null}
                 </div>
               ) : null}
               <div role="status" aria-live="polite">
@@ -406,12 +401,12 @@ export function ManagePage({token}: {token: string}) {
                   status={b.status}
                   reference={b.reference}
                   partySize={b.partySize}
-                  manageUrl={`${location.origin}/reservacion/${token}/`}
+                  manageUrl={manageLink(token)}
                   full
                 />
                 {canAsk ? (
                   <div className="space-y-2 border-t border-border/70 pt-4">
-                    <Button variant="secondary" width="full" onClick={() => setAskOpen(true)} disabled={busy !== null}>
+                    <Button variant="secondary" width="full" onClick={() => setAskOpen(true)} busy={busy !== null}>
                       <MessageSquareText aria-hidden="true" />
                       {t('manage.ask')}
                     </Button>
@@ -422,12 +417,7 @@ export function ManagePage({token}: {token: string}) {
                 ) : null}
                 {b.canWithdraw ? (
                   <div className="border-t border-border/70 pt-4">
-                    <Button
-                      variant="quiet"
-                      width="full"
-                      onClick={() => setConfirmWithdraw(true)}
-                      disabled={busy !== null}
-                    >
+                    <Button variant="quiet" width="full" onClick={() => setConfirmWithdraw(true)} busy={busy !== null}>
                       <CircleX aria-hidden="true" />
                       {t('manage.withdraw')}
                     </Button>
@@ -527,7 +517,7 @@ export function ManagePage({token}: {token: string}) {
         footer={
           <div className="flex gap-3">
             <Button onClick={() => setAskOpen(false)}>{t('manage.keep')}</Button>
-            <Button type="submit" form={askForm} variant="primary" className="flex-1" disabled={busy !== null}>
+            <Button type="submit" form={askForm} variant="primary" className="flex-1" busy={busy !== null}>
               {busy === 'ask' ? t('flow.sending') : t('manage.askSend')}
             </Button>
           </div>

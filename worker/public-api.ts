@@ -5,7 +5,6 @@ import {error, json, mutationIdOf, newReference, readJson, sha256Hex} from './ht
 import {answer, write} from './mutate.ts';
 import {acceptTerms, createInquiry, createReservation, guestRequest, withdraw} from './rules.ts';
 import {manageView, publicPolicies, publicSession, publicSessions} from './views.ts';
-import {deliverTexts, textsOn, toE164} from './texts.ts';
 import {
   acceptSchema,
   createBookingSchema,
@@ -46,7 +45,6 @@ export async function handlePublic(request: Request, url: URL, ctx: Context): Pr
       requiredContact: (contact?.value as PublicConfig['requiredContact']) ?? null,
       instagramUrl: INSTAGRAM_URL,
       now: ctx.now,
-      texts: textsOn(ctx.env),
     };
     return json(config);
   }
@@ -84,9 +82,6 @@ export async function handlePublic(request: Request, url: URL, ctx: Context): Pr
     if (!parsed.success) return invalid(parsed.error.issues);
     const b = parsed.data;
     const tokenDigest = await sha256Hex(b.token);
-    // A text only when the guest asked, gave a phone that can take one, and texts are on.
-    const wantsText = b.textConsent && b.contactKind === 'phone' && textsOn(ctx.env);
-    const textTo = wantsText ? toE164(b.contactValue) : null;
     const input = {
       bookingId: crypto.randomUUID(),
       reference: newReference(),
@@ -100,8 +95,6 @@ export async function handlePublic(request: Request, url: URL, ctx: Context): Pr
       tokenDigest,
       mutationId,
       now: ctx.now,
-      textTo,
-      lang: b.lang,
     };
     // The payload covers what the guest sent (the token only as its digest), never server ids.
     const {token: _token, ...sent} = b;
@@ -136,8 +129,6 @@ export async function handlePublic(request: Request, url: URL, ctx: Context): Pr
         outcome.status = current.status;
         outcome.version = current.version;
       }
-      // A confirmed booking whose guest asked for a text gets it now; the answer says what happened.
-      const text = await deliverTexts(ctx.db, ctx.env, ctx.now, outcome.id);
       return json({
         ok: true,
         replayed: result.replayed,
@@ -145,8 +136,6 @@ export async function handlePublic(request: Request, url: URL, ctx: Context): Pr
         reference: outcome.reference,
         status: outcome.status,
         version: outcome.version,
-        text,
-        textNumberRefused: wantsText && textTo === null,
       });
     }
     return answer(result);

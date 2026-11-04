@@ -5,7 +5,7 @@
 import {useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type Ref} from 'react';
 import {AnimatePresence, motion, useReducedMotion} from 'motion/react';
 import {CalendarDays, CircleCheck, Copy, Hourglass, MessageCircle, Minus, Plus} from 'lucide-react';
-import type {BookingStatus, ManageView, PublicSession, PublicTerms, TextStatus} from '../../shared/types.ts';
+import type {BookingStatus, ManageView, PublicSession, PublicTerms} from '../../shared/types.ts';
 import {formatLongDate, formatShortDate, formatTime} from '../../shared/time.ts';
 import {useT} from '../lib/i18n.tsx';
 import {useConfig} from '../lib/config.tsx';
@@ -28,6 +28,7 @@ import {Popcorn} from '../components/Popcorn.tsx';
 import {PolicyBlock, WhenText} from './SessionDetail.tsx';
 import {CalendarExport} from './CalendarExport.tsx';
 import {draftKey, receiptKey} from './flowStorage.ts';
+import {manageLink} from '../lib/links.ts';
 
 const PHONE = /^[0-9+()\-.\s]{7,20}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -45,8 +46,6 @@ interface Draft {
   accepted: boolean;
   /** The terms the guest ticked "I accept" for: a saved tick counts only for those same terms. */
   acceptedKey?: string | null;
-  /** The guest asked for their booking number by text (phone only, when texts are on). */
-  textConsent?: boolean;
   mutationId: string;
   token: string;
 }
@@ -59,10 +58,6 @@ interface Receipt {
   partySize: number;
   replaced?: boolean;
   intent?: 'reserve' | 'request';
-  /** The text with the booking number, as the provider answered (null: none was sent). */
-  text?: TextStatus | null;
-  /** The guest asked for a text, but their number can't take one. */
-  textNumberRefused?: boolean;
 }
 
 /** One key per set of terms: policy version and price. */
@@ -83,7 +78,6 @@ function freshDraft(session: PublicSession, kind: 'phone' | 'email'): Draft {
     note: '',
     accepted: false,
     acceptedKey: null,
-    textConsent: false,
     mutationId: newMutationId(),
     token: newToken(),
   };
@@ -125,8 +119,6 @@ export function ReserveFlow({
   // "I accept" counts only for the terms on screen now, not for terms a saved draft once showed.
   const currentTerms = termsKey(session.terms);
   const accepted = draft.accepted && draft.acceptedKey === currentTerms;
-  // Texts are offered only when the business has set them up, and only for a phone.
-  const textsOffered = Boolean(config?.texts) && draft.contactKind === 'phone';
   // The group size as typed, so a field can be cleared and retyped without jumping.
   const [partyText, setPartyText] = useState(() => String(draft.partySize));
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -219,6 +211,7 @@ export function ReserveFlow({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (sending) return;
     if (reserve && !accepted) {
       setErrors({accepted: t('flow.acceptRequired')});
       // The submit sits in the footer, so bring the checkbox and its error into view.
@@ -249,8 +242,6 @@ export function ReserveFlow({
       reference: string;
       status?: BookingStatus;
       linkReplaced?: boolean;
-      text?: TextStatus | null;
-      textNumberRefused?: boolean;
     }>(
       '/api/public/bookings',
       {
@@ -264,8 +255,6 @@ export function ReserveFlow({
         token: draft.token,
         terms,
         acceptedTerms: reserve ? accepted : false,
-        textConsent: textsOffered && Boolean(draft.textConsent),
-        lang,
       },
       draft.mutationId,
     );
@@ -294,8 +283,6 @@ export function ReserveFlow({
           token: draft.token,
           partySize: draft.partySize,
           intent: reserve ? 'reserve' : 'request',
-          text: result.data.text ?? null,
-          textNumberRefused: Boolean(result.data.textNumberRefused),
         });
       }
       return;
@@ -313,7 +300,6 @@ export function ReserveFlow({
           token: draft.token,
           partySize: b.partySize,
           intent: reserve ? 'reserve' : 'request',
-          text: b.text,
         });
         return;
       }
@@ -383,12 +369,12 @@ export function ReserveFlow({
   );
   const contactForm = `${ids}-contact-form`;
   const reviewForm = `${ids}-review-form`;
-  const manageUrl = receipt?.token ? `${location.origin}/reservacion/${receipt.token}/` : null;
+  const manageUrl = receipt?.token ? manageLink(receipt.token) : null;
   // The actions sit in the sheet's footer, so they stay in view on every step.
   const actions = (back: Step | null, primary: ReactNode) => (
     <div className="flex gap-3">
       {back ? (
-        <Button onClick={() => go(back)} disabled={sending}>
+        <Button onClick={() => go(back)} busy={sending}>
           {t('flow.back')}
         </Button>
       ) : null}
@@ -556,21 +542,6 @@ export function ReserveFlow({
             onChange={event => setDraft({contactValue: event.target.value})}
           />
         </Field>
-        {textsOffered ? (
-          <div className="space-y-1">
-            <Checkbox
-              id={`${ids}-text`}
-              checked={Boolean(draft.textConsent)}
-              onChange={textConsent => setDraft({textConsent})}
-              describedBy={`${ids}-text-help`}
-            >
-              {t('flow.textConsent')}
-            </Checkbox>
-            <p id={`${ids}-text-help`} className={cn(helper, 'pl-8')}>
-              {t('flow.textConsentHelp')}
-            </p>
-          </div>
-        ) : null}
         <Disclosure variant="link" summary={t('flow.addNote')} defaultOpen={Boolean(draft.note || errors.note)}>
           <Field
             id={noteId}
@@ -624,9 +595,6 @@ export function ReserveFlow({
             <span className={cn('block', draft.contactKind === 'phone' ? 'whitespace-nowrap' : 'break-all')}>
               {draft.contactValue}
             </span>
-            {textsOffered && draft.textConsent ? (
-              <span className={cn('block', helper)}>{t('flow.textChosen')}</span>
-            ) : null}
           </>
         ),
         edit: 3,
@@ -702,14 +670,7 @@ export function ReserveFlow({
     );
     footer = actions(
       3,
-      <Button
-        variant="primary"
-        type="submit"
-        form={reviewForm}
-        className="flex-1"
-        disabled={sending}
-        aria-busy={sending}
-      >
+      <Button variant="primary" type="submit" form={reviewForm} className="flex-1" busy={sending}>
         {sending
           ? t('flow.sending')
           : problem?.kind === 'lost'
@@ -849,19 +810,6 @@ function ReceiptView({
         : ended
           ? t('result.ended')
           : t('result.inquiry');
-  // What we say about messages is only what happened: a text the provider took, refused or never
-  // answered, a number that can't take one, or no message at all.
-  const text =
-    receipt.text && receipt.text.status !== 'skipped' && receipt.text.status !== 'queued' ? receipt.text : null;
-  const messageLine = text
-    ? text.status === 'sent'
-      ? t('result.textSent', {to: text.to})
-      : text.status === 'failed'
-        ? t('result.textFailed', {to: text.to})
-        : t('result.textUnknown', {to: text.to})
-    : receipt.textNumberRefused
-      ? t('result.textRefused')
-      : t('result.noMessage');
 
   const copyDm = async () => {
     const ok = await copyText(dm);
@@ -950,9 +898,7 @@ function ReceiptView({
           </div>
         </div>
       ) : null}
-      <p className="text-sm font-medium leading-5 text-ink" data-message-line="">
-        {messageLine}
-      </p>
+      <p className="text-sm font-medium leading-5 text-ink">{t('result.noMessage')}</p>
       <CalendarExport
         session={session}
         status={receipt.status}

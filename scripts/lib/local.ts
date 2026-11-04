@@ -35,6 +35,11 @@ export function staffSql(members: {email: string; role: 'owner' | 'staff'}[], no
     .join('\n');
 }
 
+/** Applies any new migrations to an existing local database; nothing happens when it is current. */
+export function migrateLocalDb(persistTo: string): void {
+  wranglerSync(['d1', 'migrations', 'apply', 'pap-local', '--env', 'local', '--local', '--persist-to', persistTo]);
+}
+
 /** A fresh local database in `persistTo`: migrations, the 'local' marker, staff and the demo seed. */
 export function prepareLocalDb(persistTo: string, options: {seed?: boolean; now?: number} = {}): void {
   const now = options.now ?? Date.now();
@@ -58,20 +63,9 @@ export function prepareLocalDb(persistTo: string, options: {seed?: boolean; now?
   wranglerSync(['d1', 'execute', 'pap-local', ...local, '--file', file]);
 }
 
-/**
- * `wrangler dev --env local`. `fakeTexts` turns on the local stand-in for the text provider (it
- * sends nothing): only the browser and release tests use it, so `npm run dev` never claims a text
- * went out.
- */
-export function startWrangler(
-  persistTo: string,
-  port: number,
-  testSwitches: boolean,
-  options: {fakeTexts?: boolean} = {},
-): ChildProcess {
+export function startWrangler(persistTo: string, port: number, testSwitches: boolean): ChildProcess {
   const args = ['dev', '--env', 'local', '--persist-to', persistTo, '--port', String(port), '--ip', '127.0.0.1'];
   if (testSwitches) args.push('--var', 'TEST_AUTH:1', '--var', 'TEST_CLOCK:1');
-  if (options.fakeTexts) args.push('--var', 'TEXT_FAKE:1');
   const child = spawn(WRANGLER, args, {cwd: ROOT, env: quiet, stdio: 'inherit'});
   const stop = () => child.kill('SIGTERM');
   process.on('exit', stop);

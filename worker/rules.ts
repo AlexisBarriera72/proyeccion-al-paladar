@@ -189,7 +189,7 @@ const bookingSnapshot = (id: string) =>
   sql`(SELECT json_object('id', id, 'reference', reference, 'status', status, 'sessionId', session_id,
     'partySize', party_size, 'version', version, 'checkedInAt', checked_in_at,
     'exceptionReason', exception_reason, 'leadName', lead_name, 'contactKind', contact_kind,
-    'contactValue', contact_value, 'note', note, 'textTo', text_to) FROM bookings WHERE id = ${id})`;
+    'contactValue', contact_value, 'note', note) FROM bookings WHERE id = ${id})`;
 
 const bookingCarries = (id: string, mutationId: string) =>
   sql`EXISTS (SELECT 1 FROM bookings WHERE id = ${id} AND last_mutation_id = ${mutationId})`;
@@ -215,8 +215,6 @@ interface BookingUpdate {
   checks: Check[];
   destination?: string;
   extra?: (guard: Sql) => Sql[];
-  /** This write can confirm the booking: queue its number by text if the guest asked for it. */
-  textWhenConfirmed?: boolean;
 }
 
 /** An UPDATE of one booking, joined to its session (and a destination when moving). */
@@ -230,7 +228,6 @@ function bookingUpdate(p: BookingUpdate): ActionSpec {
       sql`UPDATE bookings AS b SET ${p.set}, version = b.version + 1, last_mutation_id = ${p.mutationId}, updated_at = ${p.now}
         FROM sessions AS s${from} WHERE s.id = b.session_id${where} AND b.id = ${p.id} AND ${allOf(p.checks)} AND ${guard}`,
       ...(p.extra?.(guard) ?? []),
-      ...(p.textWhenConfirmed ? [queueBookingText(p.id, p.mutationId, p.now)(guard)] : []),
     ],
     appliedWhen: bookingCarries(p.id, p.mutationId),
     rejectReason: sql`COALESCE((SELECT ${firstFailure(p.checks)} FROM bookings AS b JOIN sessions AS s ON s.id = b.session_id${leftJoin}
@@ -278,28 +275,6 @@ export interface CreateBookingInput {
   tokenDigest: string | null;
   mutationId: string;
   now: number;
-  /** Where to text the booking number, in E.164 form: set only when the guest agreed to it. */
-  textTo?: string | null;
-  /** The language the guest booked in, for that text. */
-  lang?: 'es' | 'en';
-}
-
-/**
- * When the write it follows leaves the booking confirmed, and the guest asked for their number by
- * text (text_to), one text is queued in the same transaction. A booking's number is texted once:
- * not again while one is queued, being sent, sent or of unknown outcome.
- */
-function queueBookingText(id: string, mutationId: string, now: number) {
-  return (guard: Sql) =>
-    sql`INSERT INTO text_messages (id, booking_id, kind, to_number, status, created_at, updated_at, mutation_id,
-        last_mutation_id)
-      SELECT ${mutationId + ':text'}, b.id, 'booking_number', b.text_to, 'queued', ${now}, ${now}, ${mutationId},
-        ${mutationId}
-      FROM bookings AS b WHERE b.id = ${id} AND b.last_mutation_id = ${mutationId} AND b.status = 'confirmed'
-        AND b.text_to IS NOT NULL
-        AND NOT EXISTS (SELECT 1 FROM text_messages tm WHERE tm.booking_id = b.id AND tm.kind = 'booking_number'
-          AND tm.status IN ('queued', 'sending', 'sent', 'unknown'))
-        AND ${guard}`;
 }
 
 /** A request that holds no seats. Guests only on inquiry-mode sessions; staff on any open one. */
@@ -394,10 +369,10 @@ function createBooking(
     writes: guard => [
       sql`INSERT INTO bookings (id, reference, session_id, party_size, lead_name, contact_kind, contact_value, note, status,
           source, token_digest, accepted_policy_version_id, terms_price_status, unit_price_cents, currency, accepted_at,
-          checked_in_at, text_to, lang, synthetic, version, last_mutation_id, created_at, updated_at)
+          checked_in_at, synthetic, version, last_mutation_id, created_at, updated_at)
         SELECT ${input.bookingId}, ${input.reference}, s.id, ${input.partySize}, ${input.leadName}, ${input.contactKind},
           ${input.contactValue}, ${input.note}, ${status}, ${input.source}, ${input.tokenDigest}, ${terms},
-          ${withTerms ? input.now : null}, ${checkedIn}, ${input.textTo ?? null}, ${input.lang ?? 'es'}, s.synthetic, 1,
+          ${withTerms ? input.now : null}, ${checkedIn}, s.synthetic, 1,
           ${input.mutationId}, ${input.now}, ${input.now}
         FROM sessions AS s WHERE s.id = ${input.sessionId} AND ${allOf(checks)} AND ${guard}`,
       ...(withTerms
@@ -409,7 +384,6 @@ function createBooking(
               FROM bookings AS b WHERE b.id = ${input.bookingId} AND b.last_mutation_id = ${input.mutationId} AND ${guard}`,
           ]
         : []),
-      queueBookingText(input.bookingId, input.mutationId, input.now)(guard),
     ],
     appliedWhen: bookingCarries(input.bookingId, input.mutationId),
     rejectReason: sql`COALESCE((SELECT ${firstFailure(checks)} FROM sessions AS s WHERE s.id = ${input.sessionId}), 'session_not_found')`,
@@ -450,7 +424,6 @@ export function confirm(p: BookingAction): ActionSpec {
       statuses: ['inquiry', 'pending_payment'],
       extraCondition: sql`b.version = ${p.expectedVersion} AND ${firstFailure(checks)} = 'no_seats'`,
     }),
-    textWhenConfirmed: true,
   });
 }
 
@@ -472,7 +445,6 @@ export function resolveSame(p: BookingAction): ActionSpec {
       accepted(),
       paidUnder(n),
     ],
-    textWhenConfirmed: true,
   });
 }
 
@@ -497,7 +469,6 @@ export function resolveOther(p: BookingAction & {destination: string}): ActionSp
       termsForDestination,
       paidUnder(n, 'b', 'd'),
     ],
-    textWhenConfirmed: true,
   });
 }
 
@@ -587,7 +558,6 @@ export function moveRequest(
     ...p,
     set: sql`session_id = d.id, prev_session_id = b.session_id${relock}`,
     checks,
-    textWhenConfirmed: p.status === 'pending_payment',
   });
 }
 
@@ -601,8 +571,6 @@ export function editRequest(
     contactKind: 'phone' | 'email';
     contactValue: string;
     note: string | null;
-    /** Where to text the number once confirmed, in E.164 form: set only with the guest's consent. */
-    textTo: string | null;
   },
 ): ActionSpec {
   const sizeChecks: Check[] = !p.sizeChanged
@@ -613,7 +581,7 @@ export function editRequest(
   return bookingUpdate({
     ...p,
     set: sql`party_size = ${p.partySize}, prev_party_size = b.party_size, lead_name = ${p.leadName},
-      contact_kind = ${p.contactKind}, contact_value = ${p.contactValue}, note = ${p.note}, text_to = ${p.textTo}`,
+      contact_kind = ${p.contactKind}, contact_value = ${p.contactValue}, note = ${p.note}`,
     checks: [
       version(p.expectedVersion),
       statusIn([p.status]),
@@ -892,81 +860,5 @@ export function resolveRequest(p: {requestId: string; actor: string; mutationId:
     rejectReason: sql`COALESCE((SELECT CASE WHEN status <> 'open' THEN 'already_resolved' ELSE 'rejected' END
       FROM booking_requests WHERE id = ${p.requestId}), 'not_found')`,
     outcome: snapshot,
-  };
-}
-
-// ---------------------------------------------------------------- texts
-
-const textSnapshot = (id: string) =>
-  sql`(SELECT json_object('id', id, 'bookingId', booking_id, 'status', status, 'providerId', provider_id)
-    FROM text_messages WHERE id = ${id})`;
-const textCarries = (id: string, mutationId: string) =>
-  sql`EXISTS (SELECT 1 FROM text_messages WHERE id = ${id} AND last_mutation_id = ${mutationId})`;
-
-const textBookingConfirmed = A(
-  `EXISTS (SELECT 1 FROM bookings tb WHERE tb.id = t.booking_id AND tb.status = 'confirmed')`,
-);
-
-/**
- * Take a queued text to send it. Only one request can, so a text is never sent twice; and only
- * while its booking is still confirmed, so a text that says "confirmed" never follows a cancel.
- */
-export function claimText(p: {id: string; mutationId: string; now: number}): ActionSpec {
-  const checks: Check[] = [
-    {code: 'text_not_queued', when: raw(`t.status = 'queued'`)},
-    {code: 'text_booking_not_confirmed', when: textBookingConfirmed},
-  ];
-  return {
-    snapshot: textSnapshot(p.id),
-    writes: guard => [
-      sql`UPDATE text_messages AS t SET status = 'sending', updated_at = ${p.now}, last_mutation_id = ${p.mutationId}
-        WHERE t.id = ${p.id} AND ${allOf(checks)} AND ${guard}`,
-    ],
-    appliedWhen: textCarries(p.id, p.mutationId),
-    rejectReason: sql`COALESCE((SELECT ${firstFailure(checks)} FROM text_messages AS t WHERE t.id = ${p.id}), 'not_found')`,
-    outcome: textSnapshot(p.id),
-  };
-}
-
-/** A queued text whose booking is no longer confirmed is skipped: it is never sent. */
-export function skipText(p: {id: string; mutationId: string; now: number}): ActionSpec {
-  const checks: Check[] = [
-    {code: 'text_not_queued', when: raw(`t.status = 'queued'`)},
-    {code: 'text_booking_confirmed', when: sql`NOT ${textBookingConfirmed}`},
-  ];
-  return {
-    snapshot: textSnapshot(p.id),
-    writes: guard => [
-      sql`UPDATE text_messages AS t SET status = 'skipped', error = 'booking_not_confirmed', updated_at = ${p.now},
-          last_mutation_id = ${p.mutationId}
-        WHERE t.id = ${p.id} AND ${allOf(checks)} AND ${guard}`,
-    ],
-    appliedWhen: textCarries(p.id, p.mutationId),
-    rejectReason: sql`COALESCE((SELECT ${firstFailure(checks)} FROM text_messages AS t WHERE t.id = ${p.id}), 'not_found')`,
-    outcome: textSnapshot(p.id),
-  };
-}
-
-/** What the provider answered for a text being sent; nothing else sets a text's outcome. */
-export function recordText(p: {
-  id: string;
-  status: 'sent' | 'failed' | 'unknown' | 'skipped';
-  providerId: string | null;
-  error: string | null;
-  body: string | null;
-  mutationId: string;
-  now: number;
-}): ActionSpec {
-  const checks: Check[] = [{code: 'text_not_sending', when: raw(`t.status = 'sending'`)}];
-  return {
-    snapshot: textSnapshot(p.id),
-    writes: guard => [
-      sql`UPDATE text_messages AS t SET status = ${p.status}, provider_id = ${p.providerId}, error = ${p.error},
-          body = ${p.body}, updated_at = ${p.now}, last_mutation_id = ${p.mutationId}
-        WHERE t.id = ${p.id} AND ${allOf(checks)} AND ${guard}`,
-    ],
-    appliedWhen: textCarries(p.id, p.mutationId),
-    rejectReason: sql`COALESCE((SELECT ${firstFailure(checks)} FROM text_messages AS t WHERE t.id = ${p.id}), 'not_found')`,
-    outcome: textSnapshot(p.id),
   };
 }

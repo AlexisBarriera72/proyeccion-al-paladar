@@ -27,7 +27,7 @@ test('error: a retry that keeps the page, then the dates', async ({page}) => {
 });
 
 test('a link that is no longer valid says so', async ({page}) => {
-  await page.goto('/reservacion/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/');
+  await page.goto('/reservacion/#AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
   await expect(page.getByText('Este enlace ya no es válido. Pide uno nuevo al equipo.')).toBeVisible();
 });
 

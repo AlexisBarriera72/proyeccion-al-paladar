@@ -688,7 +688,6 @@ test('editing a request keeps the contact rules a new request must meet', async 
           contactKind: kind,
           contactValue: value,
           note: null,
-          textTo: null,
         }),
       {kind, value, leadName},
     );

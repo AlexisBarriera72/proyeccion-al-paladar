@@ -12,7 +12,7 @@ const PAGES = [
   '/funciones/demo-prueba-a/',
   '/funciones/demo-shrek-1/',
   '/politicas/',
-  '/reservacion/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/',
+  '/reservacion/#AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
   '/no-existe/',
   '/equipo/',
   '/equipo/sesiones/demo-prueba-a/',
@@ -97,7 +97,7 @@ test('axe finds nothing on the guest page or in its request sheet', async ({page
     },
   });
   expect(made.status()).toBe(200);
-  await page.goto(`/reservacion/${token}/`);
+  await page.goto(`/reservacion/#${token}`);
   await expect(page.getByRole('heading', {level: 1, name: 'Tu reservación'})).toBeVisible();
   await page.waitForLoadState('networkidle');
   const onPage = await new AxeBuilder({page}).analyze();

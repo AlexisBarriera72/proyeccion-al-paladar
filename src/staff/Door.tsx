@@ -1,13 +1,12 @@
 // The door, on "Esta noche": finding a guest by number, name or phone (Recepción), and guests who
 // arrive without a reservation (walk-ins). A walk-in gets a booking number on the spot only when
 // the server agrees: seats left, the session's limits, its terms accepted in person. The screen
-// says only what the server answered, and what the text provider answered for the number.
+// says only what the server answered.
 import {useId, useState, type FormEvent} from 'react';
-import type {TextStatus} from '../../shared/types.ts';
 import {formatTime} from '../../shared/time.ts';
 import {formatMoney, pick} from '../lib/format.ts';
 import {Link} from '../lib/router.tsx';
-import {doorNumber, helper, kicker, numbers, sectionTitle} from '../lib/styles.ts';
+import {doorNumber, kicker, numbers, sectionTitle} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
 import {Dialog} from '../components/ui/dialog.tsx';
@@ -26,7 +25,6 @@ import {
   useStaffT,
   type Notice,
 } from './ui.tsx';
-import {useMe} from './me.ts';
 import type {StaffBookingRow, TonightSession} from './types.ts';
 
 const PHONE = /^[0-9+()\-.\s]{7,20}$/;
@@ -60,8 +58,6 @@ export function findArrivals(bookings: StaffBookingRow[], query: string): StaffB
 
 interface WalkInAnswer {
   outcome: {id: string; reference: string; status: string; checkedInAt: number | null};
-  text?: TextStatus | null;
-  textNumberRefused?: boolean;
 }
 
 const seatsFree = (s: TonightSession) => (s.capacity === null ? 0 : s.capacity - s.blocked_seats - s.seats_taken);
@@ -74,23 +70,7 @@ const blankWalkIn = (ready: TonightSession[]) => ({
   contactValue: '',
   note: '',
   accepted: false,
-  textConsent: false,
-  textLang: 'es' as 'es' | 'en',
 });
-
-/** What we know about the text with the number, in the staff's words. Null when none was asked for. */
-export function textLine(
-  t: (key: string, vars?: Record<string, string | number>) => string,
-  text: TextStatus | null | undefined,
-  refused?: boolean,
-): string | null {
-  if (text?.status === 'sent') return t('bk.textSent', {to: text.to});
-  if (text?.status === 'failed') return t('bk.textFailed', {to: text.to});
-  if (text?.status === 'unknown') return t('bk.textUnknown', {to: text.to});
-  if (text?.status === 'skipped') return t('bk.textSkipped');
-  if (text?.status === 'queued') return t('bk.textQueued');
-  return refused ? t('bk.textRefused') : null;
-}
 
 /** "Llegó sin reservación": a sheet that registers the guest and shows their number. */
 export function WalkInSheet({
@@ -106,7 +86,6 @@ export function WalkInSheet({
   onSaved: () => void;
 }) {
   const {t, lang} = useStaffT();
-  const me = useMe();
   const ids = useId();
   const formId = useId();
   const outcome = useOutcome();
@@ -126,7 +105,6 @@ export function WalkInSheet({
   useOnOpen(open, reset);
   const set = (patch: Partial<typeof form>) => setForm(current => ({...current, ...patch}));
   const session = ready.find(s => s.id === form.sessionId) ?? null;
-  const textsOffered = me.texts && form.contactKind === 'phone';
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -157,8 +135,6 @@ export function WalkInSheet({
         currency: session.currency,
       },
       acceptedTerms: form.accepted,
-      textConsent: textsOffered && form.textConsent,
-      lang: form.textLang,
     });
     if (result.kind === 'ok') {
       setNotice(null);
@@ -187,9 +163,6 @@ export function WalkInSheet({
             ? t('walk.confirmed', {time: formatTime(answer.outcome.checkedInAt, lang)})
             : t('walk.pending')}
         </p>
-        {textLine(t, answer.text, answer.textNumberRefused) ? (
-          <p className={helper}>{textLine(t, answer.text, answer.textNumberRefused)}</p>
-        ) : null}
       </div>
       <Link
         to={`/equipo/reservaciones/${answer.outcome.id}/`}
@@ -297,29 +270,6 @@ export function WalkInSheet({
               error={errors.contactValue}
               maxLength={120}
             />
-            {textsOffered ? (
-              <div className="flex flex-col gap-2">
-                <CheckField
-                  id={`${ids}-text`}
-                  label={t('bk.textConsent')}
-                  checked={form.textConsent}
-                  onChange={textConsent => set({textConsent})}
-                />
-                {form.textConsent ? (
-                  <SelectField
-                    id={`${ids}-text-lang`}
-                    label={t('bk.textLang')}
-                    value={form.textLang}
-                    onChange={textLang => set({textLang})}
-                    className="max-w-xs"
-                    options={[
-                      {value: 'es', label: 'Español'},
-                      {value: 'en', label: 'English'},
-                    ]}
-                  />
-                ) : null}
-              </div>
-            ) : null}
             <TextField
               id={`${ids}-note`}
               label={t('bk.note')}

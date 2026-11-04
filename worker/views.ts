@@ -4,7 +4,6 @@
 import {raw, sql, type Sql} from './sql.ts';
 import {all, first, type Db} from './db.ts';
 import {allOf, confirmable, confirmedSeats, net} from './rules.ts';
-import {latestText} from './texts.ts';
 import type {
   Availability,
   BookingStatus,
@@ -307,6 +306,5 @@ export async function manageView(db: Db, now: number, tokenDigest: string): Prom
     proposals: proposalViews,
     openRequests: openRequests.map(request => ({id: request.id, kind: request.kind, createdAt: request.created_at})),
     canWithdraw: ['inquiry', 'pending_payment'].includes(booking.status) && booking.net === 0,
-    text: await latestText(db, booking.id),
   };
 }

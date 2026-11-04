@@ -84,7 +84,8 @@ export default {
         }
         return secure(await shell(env, request), privateOptions);
       }
-      if (path.startsWith('/reservacion/')) {
+      // The guest's page: its token is in the link's fragment, which the browser never sends.
+      if (path === '/reservacion' || path.startsWith('/reservacion/')) {
         return secure(await shell(env, request), {...privateOptions, noReferrer: true});
       }
       const fn = /^\/funciones\/([A-Za-z0-9_-]{1,80})\/?$/.exec(path);

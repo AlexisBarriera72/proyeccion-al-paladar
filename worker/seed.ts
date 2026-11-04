@@ -217,6 +217,16 @@ export function demoSeed(now: number): SeedRow[] {
     });
   testSession('demo-prueba-a', at(5, 19, 30), null, 'demo-politica-a');
   testSession('demo-prueba-b', at(12, 19, 30), 100, 'demo-politica-b');
+  // Tonight, so a presentation can show the door: Esta noche lists its guests, Recepción finds
+  // them, and walk-ins can join. 7:30 p. m., or, when the demo is reset later than 6:30 p. m., the
+  // next half hour at least an hour away, so it is never already over when the demo starts.
+  const halfHour = 30 * 60 * 1000;
+  testSession(
+    'demo-prueba-hoy',
+    Math.max(at(0, 19, 30), Math.ceil((now + 2 * halfHour) / halfHour) * halfHour),
+    null,
+    'demo-politica-a',
+  );
 
   const guest = (
     n: number,
@@ -225,6 +235,7 @@ export function demoSeed(now: number): SeedRow[] {
     status: string,
     source: string,
     terms: {policy: string; priceStatus: string; price: number | null} | null,
+    phone?: string,
   ) => {
     const id = `demo-booking-${n}`;
     add('bookings', {
@@ -233,8 +244,8 @@ export function demoSeed(now: number): SeedRow[] {
       session_id: session,
       party_size: party,
       lead_name: `Cliente de prueba ${String(n).padStart(2, '0')}`,
-      contact_kind: 'email',
-      contact_value: `cliente${String(n).padStart(2, '0')}@example.com`,
+      contact_kind: phone ? 'phone' : 'email',
+      contact_value: phone ?? `cliente${String(n).padStart(2, '0')}@example.com`,
       note: null,
       status,
       exception_reason: null,
@@ -272,6 +283,9 @@ export function demoSeed(now: number): SeedRow[] {
   guest(2, 'demo-prueba-a', 4, 'confirmed', 'instagram_dm', termsA);
   guest(3, 'demo-shrek-1', 4, 'inquiry', 'instagram_dm', null);
   guest(4, 'demo-prueba-b', 2, 'pending_payment', 'web', termsB);
+  guest(5, 'demo-prueba-hoy', 2, 'confirmed', 'web', termsA);
+  guest(6, 'demo-prueba-hoy', 4, 'confirmed', 'instagram_dm', termsA);
+  guest(7, 'demo-prueba-hoy', 3, 'confirmed', 'phone', termsA, '787-555-0107');
   return rows;
 }
 

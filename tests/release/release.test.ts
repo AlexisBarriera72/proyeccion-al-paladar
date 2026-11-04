@@ -52,7 +52,8 @@ test('every response type carries the security headers', async () => {
       headers: {'Content-Type': 'application/json', Origin: 'https://example.com'},
       body: JSON.stringify({token: token()}),
     }),
-    manage: await fetch(`${BASE}/reservacion/${token()}/`),
+    // The guest's page: its token is in the fragment, which never reaches the server.
+    manage: await fetch(`${BASE}/reservacion/`),
     session: await fetch(`${BASE}/funciones/demo-prueba-a/`),
   };
   for (const [name, response] of Object.entries(responses)) {

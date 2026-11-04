@@ -18,7 +18,7 @@ import {raw, sql, type Sql} from './sql.ts';
 import {first, statement, type Db} from './db.ts';
 
 export type TargetType =
-  'session' | 'booking' | 'request' | 'experience' | 'venue' | 'policy' | 'setting' | 'staff' | 'database' | 'message';
+  'session' | 'booking' | 'request' | 'experience' | 'venue' | 'policy' | 'setting' | 'staff' | 'database';
 
 export interface Binding {
   mutationId: string;

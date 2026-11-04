@@ -1360,7 +1360,7 @@ export function Settings() {
                         </>
                       }
                       confirmLabel={t('reset.confirm')}
-                      disabled={busy}
+                      busy={busy}
                       onConfirm={async () => {
                         const result = await run('/api/equipo/demo/reset', {});
                         setNotice(outcome(result, t('reset.done')));

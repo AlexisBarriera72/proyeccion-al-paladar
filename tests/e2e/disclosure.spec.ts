@@ -101,7 +101,7 @@ test('every guest page finishes showing its content (none stays invisible)', asy
     '/funciones/demo-prueba-a/',
     '/funciones/demo-shrek-1/',
     '/politicas/',
-    '/reservacion/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/',
+    '/reservacion/#AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     '/no-existe/',
   ]) {
     await page.goto(path);

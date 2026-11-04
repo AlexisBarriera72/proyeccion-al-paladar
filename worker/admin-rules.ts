@@ -489,7 +489,6 @@ export function saveStaffMember(p: {
  */
 /** What a demo reset empties, children first. Staff members and the audit history stay. */
 export const DEMO_RESET_TABLES = [
-  'text_messages',
   'payments',
   'term_acceptances',
   'term_proposals',

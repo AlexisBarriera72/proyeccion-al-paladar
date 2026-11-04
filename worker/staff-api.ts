@@ -40,7 +40,6 @@ import {
   type SessionFields,
 } from './admin-rules.ts';
 import {demoSeed} from './seed.ts';
-import {deliverTexts, latestText, textsOn, toE164} from './texts.ts';
 import {sessionSelect, toPublicPolicy} from './views.ts';
 import {prDayBounds, prIsoLocal} from '../shared/time.ts';
 import {
@@ -82,17 +81,7 @@ const BOOKING_COLUMNS =
   raw(`b.id, b.reference, b.session_id, b.party_size, b.lead_name, b.contact_kind, b.contact_value,
   b.note, b.status, b.exception_reason, b.source, b.checked_in_at, b.version, b.synthetic, b.created_at, b.updated_at,
   b.accepted_policy_version_id, b.accepted_at, b.terms_price_status, b.unit_price_cents, b.currency,
-  (b.token_digest IS NOT NULL) AS has_link, (b.text_to IS NOT NULL) AS wants_text, b.lang`);
-
-/**
- * Where to text a booking's number: only when the guest agreed, gave a phone that can take a
- * text, and texts are set up. `refused` says the guest agreed but the number can't take one.
- */
-function textTarget(env: Env, consent: boolean, kind: 'phone' | 'email', value: string) {
-  const wanted = consent && kind === 'phone' && textsOn(env);
-  const to = wanted ? toE164(value) : null;
-  return {to, refused: wanted && to === null};
-}
+  (b.token_digest IS NOT NULL) AS has_link`);
 
 /** Each publishing check and each confirmable part for one session: {code, ok}. */
 async function checklist(db: Db, now: number, sessionId: string) {
@@ -158,7 +147,6 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
         demo: ctx.env.DEMO_MODE === '1',
         environment: ctx.env.APP_ENV,
         now,
-        texts: textsOn(ctx.env),
       });
     }
 
@@ -246,7 +234,7 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
         sql`SELECT ${BOOKING_COLUMNS}, ${net('b')} AS net FROM bookings AS b WHERE b.id = ${id}`,
       );
       if (!row) return error('not_found', 404);
-      const [sessionRow, payments, acceptances, proposals, requests, audit, text] = await Promise.all([
+      const [sessionRow, payments, acceptances, proposals, requests, audit] = await Promise.all([
         first(db, sql`${sessionSelect(now)} WHERE s.id = ${row.session_id as string}`),
         all(db, sql`SELECT * FROM payments WHERE booking_id = ${id} ORDER BY recorded_at, rowid`),
         all(db, sql`SELECT * FROM term_acceptances WHERE booking_id = ${id} ORDER BY accepted_at, rowid`),
@@ -257,7 +245,6 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
           sql`SELECT * FROM audit_events WHERE (target_type = 'booking' AND target_id = ${id})
             OR json_extract(after_json, '$.id') = ${id} ORDER BY at, rowid`,
         ),
-        latestText(db, id),
       ]);
       const lockedRow = row.accepted_policy_version_id
         ? await first<Record<string, unknown>>(
@@ -285,7 +272,6 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
         audit,
         lockedPolicy: locked,
         lockedRules,
-        text,
       });
     }
 
@@ -493,7 +479,6 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
     const parsed = manualBookingSchema.safeParse(body.value);
     if (!parsed.success) return invalid(parsed.error.issues);
     const b = parsed.data;
-    const text = textTarget(ctx.env, b.textConsent, b.contactKind, b.contactValue);
     const input = {
       bookingId: crypto.randomUUID(),
       reference: newReference(),
@@ -507,19 +492,18 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
       tokenDigest: null,
       mutationId,
       now,
-      textTo: text.to,
-      lang: b.lang,
     };
-    const result = await write({
-      ...base,
-      action: 'create_inquiry',
-      targetType: 'session',
-      targetId: b.sessionId,
-      expectedVersion: null,
-      payload: b,
-      makeSpec: mid => createInquiry({...input, mutationId: mid}, true),
-    });
-    return answer(result, {textNumberRefused: text.refused});
+    return answer(
+      await write({
+        ...base,
+        action: 'create_inquiry',
+        targetType: 'session',
+        targetId: b.sessionId,
+        expectedVersion: null,
+        payload: b,
+        makeSpec: mid => createInquiry({...input, mutationId: mid}, true),
+      }),
+    );
   }
 
   if (path === '/api/equipo/walk-ins') {
@@ -527,7 +511,6 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
     const parsed = walkInSchema.safeParse(body.value);
     if (!parsed.success) return invalid(parsed.error.issues);
     const b = parsed.data;
-    const text = textTarget(ctx.env, b.textConsent, b.contactKind, b.contactValue);
     const [dayStart, dayEnd] = prDayBounds(now);
     const input = {
       bookingId: crypto.randomUUID(),
@@ -542,26 +525,20 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
       tokenDigest: null,
       mutationId,
       now,
-      textTo: text.to,
-      lang: b.lang,
       dayStart,
       dayEnd,
     };
-    const result = await write({
-      ...base,
-      action: 'walk_in',
-      targetType: 'session',
-      targetId: b.sessionId,
-      expectedVersion: null,
-      payload: b,
-      makeSpec: mid => createWalkIn({...input, mutationId: mid}, b.terms),
-    });
-    if (result.kind !== 'applied') return answer(result);
-    const outcome = result.outcome as {id: string};
-    return answer(result, {
-      text: await deliverTexts(db, ctx.env, now, outcome.id),
-      textNumberRefused: text.refused,
-    });
+    return answer(
+      await write({
+        ...base,
+        action: 'walk_in',
+        targetType: 'session',
+        targetId: b.sessionId,
+        expectedVersion: null,
+        payload: b,
+        makeSpec: mid => createWalkIn({...input, mutationId: mid}, b.terms),
+      }),
+    );
   }
 
   const bookingAction = /^\/api\/equipo\/bookings\/([A-Za-z0-9_:-]{1,80})\/(actions|payments)$/.exec(path);
@@ -608,7 +585,6 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
     if (!current) return error('not_found', 404);
     const common = {id, expectedVersion: a.expectedVersion, now};
     let makeSpec;
-    let textRefused = false;
     switch (a.action) {
       case 'confirm':
         makeSpec = (mid: string) => confirm({...common, mutationId: mid});
@@ -662,9 +638,6 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
       }
       case 'edit': {
         const status = current.status === 'pending_payment' ? 'pending_payment' : 'inquiry';
-        const text = textTarget(ctx.env, a.textConsent, a.contactKind, a.contactValue);
-        textRefused = text.refused;
-        const textTo = text.to;
         makeSpec = (mid: string) =>
           editRequest({
             ...common,
@@ -676,7 +649,6 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
             contactKind: a.contactKind,
             contactValue: a.contactValue,
             note: a.note,
-            textTo,
           });
         break;
       }
@@ -684,18 +656,9 @@ export async function handleStaff(request: Request, url: URL, ctx: Context): Pro
     const {expectedVersion, action, ...rest} = a;
     // The token itself never enters the ledger; its digest does (through the payload hash).
     const payload = action === 'reissue_link' ? {digest: await sha256Hex((rest as {token: string}).token)} : rest;
-    const result = await write({
-      ...base,
-      action,
-      targetType: 'booking',
-      targetId: id,
-      expectedVersion,
-      payload,
-      makeSpec,
-    });
-    if (result.kind !== 'applied') return answer(result);
-    // A write that confirmed the booking may have queued its number by text: send it now.
-    return answer(result, {text: await deliverTexts(db, ctx.env, now, id), textNumberRefused: textRefused});
+    return answer(
+      await write({...base, action, targetType: 'booking', targetId: id, expectedVersion, payload, makeSpec}),
+    );
   }
 
   const requestResolve = /^\/api\/equipo\/requests\/([A-Za-z0-9_:-]{1,80})\/resolve$/.exec(path);

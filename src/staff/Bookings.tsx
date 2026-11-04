@@ -26,6 +26,7 @@ import {formatMoney} from '../lib/format.ts';
 import {copyText} from '../lib/copy.ts';
 import {newToken} from '../lib/ids.ts';
 import {Link, navigate, useLocation} from '../lib/router.tsx';
+import {manageLink} from '../lib/links.ts';
 import {helper, numbers, rows, sectionTitle, workspace} from '../lib/styles.ts';
 import {cn} from '../lib/cn.ts';
 import {Button, buttonVariants} from '../components/ui/button.tsx';
@@ -37,7 +38,6 @@ import {intOrNull, parseMoney, useQuery, useWrite} from './api.ts';
 import {
   BookingStatus,
   Callout,
-  CheckField,
   Confirm,
   ConfirmDialog,
   Demo,
@@ -65,7 +65,6 @@ import {
 import {BookingColumns, BookingRows, SessionPicker, useSessionOptions} from './rows.tsx';
 import {AuditRow} from './history.tsx';
 import {useMe, useRefreshCounts} from './me.ts';
-import {textLine} from './Door.tsx';
 import type {BookingData, StaffBookingRow} from './types.ts';
 
 const STATUSES = ['inquiry', 'pending_payment', 'confirmed', 'exception', 'cancelled', 'fulfilled', 'no_show'] as const;
@@ -289,8 +288,6 @@ const blankEntry = (sessionId: string | null) => ({
   contactValue: '',
   note: '',
   source: 'instagram_dm' as Source,
-  textConsent: false,
-  textLang: 'es' as 'es' | 'en',
 });
 
 /**
@@ -313,7 +310,6 @@ export function ManualEntrySheet({
   const formId = useId();
   const outcome = useOutcome();
   const {run, busy} = useWrite();
-  const me = useMe();
   const sessions = useSessionOptions(open);
   const [notice, setNotice] = useState<Notice>(null);
   const [form, setForm] = useState(() => blankEntry(sessionId));
@@ -355,8 +351,6 @@ export function ManualEntrySheet({
       contactValue: value,
       note: form.note.trim() || null,
       source: form.source,
-      textConsent: me.texts && form.contactKind === 'phone' && form.textConsent,
-      lang: form.textLang,
     });
     setNotice(outcome(result, t('bk.savedInquiry')));
     const id = result.kind === 'ok' ? (result.data.outcome as {id?: string} | null)?.id : null;
@@ -479,29 +473,6 @@ export function ManualEntrySheet({
           error={errors.contactValue}
           maxLength={120}
         />
-        {me.texts && form.contactKind === 'phone' ? (
-          <div className="flex flex-col gap-2">
-            <CheckField
-              id={`${ids}-text`}
-              label={t('bk.textConsent')}
-              checked={form.textConsent}
-              onChange={textConsent => set({textConsent})}
-            />
-            {form.textConsent ? (
-              <SelectField
-                id={`${ids}-text-lang`}
-                label={t('bk.textLang')}
-                value={form.textLang}
-                onChange={textLang => set({textLang})}
-                className="max-w-xs"
-                options={[
-                  {value: 'es', label: 'Español'},
-                  {value: 'en', label: 'English'},
-                ]}
-              />
-            ) : null}
-          </div>
-        ) : null}
         <TextField
           id={`${ids}-note`}
           label={t('bk.note')}
@@ -594,7 +565,7 @@ export function BookingPage({id}: {id: string}) {
           setNotice(outcome(result, t('bk.reissueDone')));
           if (result.kind === 'ok') {
             setCopied(null);
-            setFreshLink(`${location.origin}/reservacion/${token}/`);
+            setFreshLink(manageLink(token));
           }
           void reload(true);
         };
@@ -646,11 +617,6 @@ export function BookingPage({id}: {id: string}) {
               <span className="break-all">
                 {t(b.contact_kind === 'phone' ? 'bk.phone' : 'bk.email')}: {b.contact_value}
               </span>
-              {textLine(t, data.text) ? (
-                <span className={helper}>{textLine(t, data.text)}</span>
-              ) : b.wants_text ? (
-                <span className={helper}>{t('bk.textWanted')}</span>
-              ) : null}
               <Button variant="secondary" onClick={() => openDialog('reply')}>
                 <Pencil aria-hidden="true" />
                 {t('bk.buildReply')}
@@ -757,7 +723,7 @@ export function BookingPage({id}: {id: string}) {
                       title={t('bk.confirm')}
                       body={t('bk.confirmBody')}
                       confirmLabel={t('bk.confirm')}
-                      disabled={busy}
+                      busy={busy}
                       onConfirm={() => act({action: 'confirm'}, t('bk.done'))}
                     />
                   ) : null}
@@ -770,12 +736,11 @@ export function BookingPage({id}: {id: string}) {
                         title={t('exc.same')}
                         body={t('bk.confirmBody')}
                         confirmLabel={t('exc.same')}
-                        disabled={busy}
+                        busy={busy}
                         onConfirm={() => act({action: 'resolve_same'}, t('bk.done'))}
                       />
                       <InputAction
                         label={t('exc.other')}
-                        disabled={busy}
                         busy={busy}
                         canSend={Boolean(destination)}
                         onSend={() => act({action: 'resolve_other', destination}, t('bk.done'))}
@@ -795,7 +760,7 @@ export function BookingPage({id}: {id: string}) {
                     <Button
                       variant="primary"
                       className="w-full sm:w-auto"
-                      disabled={busy}
+                      busy={busy}
                       onClick={() => void act({action: 'check_in'}, t('bk.done'))}
                     >
                       {t('bk.checkIn')}
@@ -804,7 +769,7 @@ export function BookingPage({id}: {id: string}) {
                   {undoCheckIn ? (
                     <Button
                       variant="secondary"
-                      disabled={busy}
+                      busy={busy}
                       onClick={() => void act({action: 'undo_check_in'}, t('bk.done'))}
                     >
                       {t('bk.undoCheckIn')}
@@ -813,7 +778,7 @@ export function BookingPage({id}: {id: string}) {
                   {complete ? (
                     <Button
                       variant={checkIn ? 'secondary' : 'primary'}
-                      disabled={busy}
+                      busy={busy}
                       onClick={() => void act({action: 'fulfilled'}, t('bk.done'))}
                     >
                       {t('bk.fulfilled')}
@@ -836,7 +801,7 @@ export function BookingPage({id}: {id: string}) {
                     <Button
                       variant="secondary"
                       className="self-start"
-                      disabled={busy}
+                      busy={busy}
                       onClick={async () => {
                         const result = await run(`/api/equipo/requests/${r.id}/resolve`, {});
                         setNotice(outcome(result, t('req.resolved')));
@@ -1083,7 +1048,6 @@ function EditBooking({
   busy: boolean;
 }) {
   const {t} = useStaffT();
-  const me = useMe();
   const ids = useId();
   const initial = () => ({
     partySize: String(booking.party_size),
@@ -1091,7 +1055,6 @@ function EditBooking({
     contactKind: booking.contact_kind,
     contactValue: booking.contact_value,
     note: booking.note ?? '',
-    textConsent: Boolean(booking.wants_text),
   });
   const [form, setForm] = useState(initial);
   useOnOpen(open, () => setForm(initial()));
@@ -1118,8 +1081,6 @@ function EditBooking({
             contactKind: form.contactKind,
             contactValue: form.contactValue.trim(),
             note: form.note.trim() || null,
-            // Kept only for a phone; the server keeps it only while texts are set up.
-            textConsent: form.contactKind === 'phone' && form.textConsent,
           },
           t('bk.done'),
         )
@@ -1154,14 +1115,6 @@ function EditBooking({
         value={form.contactValue}
         onChange={value => set({contactValue: value})}
       />
-      {me.texts && form.contactKind === 'phone' ? (
-        <CheckField
-          id={`${ids}-text`}
-          label={t('bk.textConsent')}
-          checked={form.textConsent}
-          onChange={textConsent => set({textConsent})}
-        />
-      ) : null}
       <TextField
         id={`${ids}-note`}
         label={t('bk.note')}

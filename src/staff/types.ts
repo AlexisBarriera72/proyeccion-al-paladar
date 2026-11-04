@@ -1,6 +1,6 @@
 // The shapes the staff endpoints answer with (worker/staff-api.ts). Reads only; every write goes
 // through the API and the server's mutation ledger.
-import type {PublicPolicy, TextStatus} from '../../shared/types.ts';
+import type {PublicPolicy} from '../../shared/types.ts';
 
 export interface StaffSession {
   id: string;
@@ -48,9 +48,6 @@ export interface StaffBookingRow {
   starts_at?: number | null;
   title_es?: string;
   has_link?: number;
-  /** The guest agreed to get their number by text once confirmed. */
-  wants_text?: number;
-  lang?: string;
 }
 
 /** Today's open sessions, for guests who arrive without a reservation (/api/equipo/tonight). */
@@ -129,8 +126,6 @@ export interface Payment {
 }
 
 export interface BookingData {
-  /** The booking's latest text with its number, as the provider answered. */
-  text: TextStatus | null;
   booking: StaffBookingRow & {
     accepted_policy_version_id: string | null;
     accepted_at: number | null;

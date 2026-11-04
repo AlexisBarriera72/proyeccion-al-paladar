@@ -5,9 +5,13 @@ import {MotionConfig} from 'motion/react';
 import {LangProvider, useT} from './lib/i18n.tsx';
 import {ConfigProvider} from './lib/config.tsx';
 import {hasNavigated, useLocation} from './lib/router.tsx';
+import {manageToken, moveLegacyTokenToFragment} from './lib/links.ts';
 import {PageFrame} from './components/Layout.tsx';
 import {CalendarPage} from './public/CalendarPage.tsx';
 import {NotFound} from './public/NotFound.tsx';
+
+// An older guest link carried its token in the path: keep it only in the fragment from now on.
+if (typeof window !== 'undefined') moveLegacyTokenToFragment();
 
 const StaffApp = lazy(() => import('./staff/StaffApp.tsx'));
 const ManagePage = lazy(() => import('./public/ManagePage.tsx').then(module => ({default: module.ManagePage})));
@@ -64,7 +68,7 @@ function PageLoading() {
 }
 
 function Routes() {
-  const {path} = useLocation();
+  const {path, hash} = useLocation();
 
   if (path === '/equipo' || path.startsWith('/equipo/')) {
     return (
@@ -76,12 +80,14 @@ function Routes() {
   }
 
   const session = /^\/funciones\/([A-Za-z0-9_-]{1,80})\/?$/.exec(path);
-  const manage = /^\/reservacion\/([^/]{1,100})\/?$/.exec(path);
+  const guestLink = /^\/reservacion(\/[^/]{0,100})?\/?$/.test(path);
   let page;
   if (path === '/') page = <CalendarPage sessionId={null} />;
   else if (session) page = <CalendarPage sessionId={session[1]} />;
-  else if (manage) page = <ManagePage key={manage[1]} token={manage[1]} />;
-  else if (path === '/politicas' || path === '/politicas/') page = <PoliciesPage />;
+  else if (guestLink) {
+    const token = manageToken(path, hash) ?? '';
+    page = <ManagePage key={token} token={token} />;
+  } else if (path === '/politicas' || path === '/politicas/') page = <PoliciesPage />;
   else page = <NotFound />;
   return (
     <PageFrame>

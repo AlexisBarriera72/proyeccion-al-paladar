@@ -50,9 +50,6 @@ const ACTION_KEYS: Record<string, string> = {
   staff_save: 'hist.action.staff_save',
   demo_reset: 'hist.action.demo_reset',
   walk_in: 'hist.action.walk_in',
-  text_claim: 'hist.action.text_claim',
-  text_result: 'hist.action.text_result',
-  text_skip: 'hist.action.text_skip',
 };
 
 const FIELD_KEYS: Record<string, string> = {
@@ -75,8 +72,6 @@ const FIELD_KEYS: Record<string, string> = {
   contactKind: 'hist.contactKind',
   contactValue: 'bk.contact',
   note: 'bk.note',
-  textTo: 'hist.textTo',
-  providerId: 'hist.providerId',
   kind: 'bk.kind',
   email: 'team.email',
   role: 'team.role',
@@ -102,7 +97,6 @@ export type HistoryType = 'bookings' | 'sessions' | 'payments' | 'settings';
 /** Who did it, as staff read it: "Cliente" for the guest's own page, the email for staff. */
 function actorName(actor: string, t: (key: string) => string): string {
   if (actor === 'guest') return t('hist.actorGuest');
-  if (actor === 'system') return t('hist.actorSystem');
   return actor.startsWith('staff:') ? actor.slice('staff:'.length) : actor;
 }
 
@@ -112,10 +106,7 @@ export function historyType(event: AuditEvent): HistoryType {
   if (event.action === 'create_reservation' || event.action === 'create_inquiry' || event.action === 'walk_in') {
     return 'bookings';
   }
-  // A text with a booking number belongs with its booking.
-  if (event.target_type === 'booking' || event.target_type === 'request' || event.target_type === 'message') {
-    return 'bookings';
-  }
+  if (event.target_type === 'booking' || event.target_type === 'request') return 'bookings';
   if (event.target_type === 'session') return 'sessions';
   return 'settings';
 }
@@ -235,7 +226,7 @@ function RecordLink({event, sessionName}: {event: AuditEvent; sessionName?: Sess
       </Link>
     );
   }
-  if ((event.target_type === 'request' || event.target_type === 'message') && typeof snapshot.bookingId === 'string') {
+  if (event.target_type === 'request' && typeof snapshot.bookingId === 'string') {
     return (
       <Link to={`/equipo/reservaciones/${snapshot.bookingId}/`} className={link}>
         {t('hist.record.booking', {ref: snapshot.bookingId})}

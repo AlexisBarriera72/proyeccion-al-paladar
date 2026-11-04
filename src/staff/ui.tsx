@@ -297,7 +297,7 @@ export function FormFooter({
       <Button variant="secondary" onClick={onCancel}>
         {t('staff.cancelAction')}
       </Button>
-      <Button type="submit" form={formId} variant="primary" disabled={busy || disabled}>
+      <Button type="submit" form={formId} variant="primary" disabled={disabled} busy={busy}>
         {busy ? t('flow.sending') : label}
       </Button>
     </div>
@@ -364,6 +364,7 @@ export function Confirm({
   confirmLabel,
   onConfirm,
   disabled,
+  busy,
   variant = 'quiet',
   className,
 }: {
@@ -373,13 +374,15 @@ export function Confirm({
   confirmLabel: string;
   onConfirm: () => unknown;
   disabled?: boolean;
+  /** A write is running: the button keeps focus but ignores presses. */
+  busy?: boolean;
   variant?: 'quiet' | 'primary' | 'secondary';
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant={variant} onClick={() => setOpen(true)} disabled={disabled} className={className}>
+      <Button variant={variant} onClick={() => setOpen(true)} disabled={disabled} busy={busy} className={className}>
         {trigger}
       </Button>
       <ConfirmDialog
@@ -462,6 +465,7 @@ export function InputDialog({
 export function InputAction({
   label,
   disabled,
+  busy,
   variant = 'secondary',
   className,
   ...dialog
@@ -479,10 +483,10 @@ export function InputAction({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant={variant} onClick={() => setOpen(true)} disabled={disabled} className={className}>
+      <Button variant={variant} onClick={() => setOpen(true)} disabled={disabled} busy={busy} className={className}>
         {label}
       </Button>
-      <InputDialog open={open} onOpenChange={setOpen} label={label} {...dialog} />
+      <InputDialog open={open} onOpenChange={setOpen} label={label} busy={busy} {...dialog} />
     </>
   );
 }

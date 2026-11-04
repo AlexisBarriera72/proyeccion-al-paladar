@@ -1,7 +1,6 @@
-// The door: the booking number guests show on arrival, their number by text (the local test
-// server's stand-in provider sends nothing), Recepción's search and guests who arrive without a
-// reservation. Also the reservation sheet's fixes from the November review.
-import {randomUUID} from 'node:crypto';
+// The door: the booking number guests show on arrival, Recepción's search and guests who arrive
+// without a reservation. Also the reservation sheet's fixes from the November review.
+import {randomBytes, randomUUID} from 'node:crypto';
 import {expect, test, type Page} from '@playwright/test';
 import {OWNER, isDesktop} from './fixtures.ts';
 
@@ -48,23 +47,21 @@ async function onShowDay(page: Page) {
   await page.setExtraHTTPHeaders({...OWNER, 'x-test-now': String(startsAt - 2 * HOUR)});
 }
 
-test('a guest who asks gets their number by text, and the receipt and their page show it large', async ({
-  page,
-}, info) => {
+test('a confirmed guest gets a large number for the door on the receipt and their page', async ({page}, info) => {
   await page.goto('/funciones/demo-prueba-a/');
   await page.getByRole('button', {name: 'Reservar plazas'}).click();
   await toContact(page);
   const dialog = page.getByRole('dialog');
-  const name = `Cliente e2e texto ${info.project.name}`;
+  const name = `Cliente e2e puerta ${info.project.name}`;
   await dialog.getByLabel('Nombre de quien reserva').fill(name);
   await dialog.getByRole('textbox', {name: 'Teléfono'}).fill('787-555-0142');
-  await dialog.getByRole('checkbox', {name: 'Envíame mi número de reservación por texto cuando se confirme.'}).check();
+  // Nothing is sent to the guest's phone: the site offers no texts.
+  await expect(dialog.getByRole('checkbox')).toHaveCount(0);
   await dialog.getByRole('button', {name: 'Continuar'}).click();
-  await expect(dialog.getByText('Pediste tu número por texto.')).toBeVisible();
   await dialog.getByRole('checkbox', {name: 'Acepto estas condiciones.'}).check();
   await dialog.getByRole('button', {name: 'Reservar plazas'}).click();
   await expect(dialog.getByRole('heading', {name: 'Reservación confirmada'})).toBeVisible();
-  // The number for the door, large, and what the provider answered: nothing more.
+  // The number for the door, large enough to read across a counter.
   const ticket = dialog.locator('[data-ticket]');
   await expect(ticket.getByText('Tu número para la entrada')).toBeVisible();
   await expect(ticket.getByText(/^PAP-[A-Z0-9]{6}$/)).toBeVisible();
@@ -72,33 +69,17 @@ test('a guest who asks gets their number by text, and the receipt and their page
   expect(size).toBeGreaterThanOrEqual(32);
   await expect(ticket.getByText('Muéstralo en la entrada al llegar.')).toBeVisible();
   await expect(
-    dialog.getByText('Te enviamos tu número por texto al ••• 0142. Guarda este enlace para ver tu reservación.'),
+    dialog.getByText('No te enviamos ningún mensaje. Guarda este enlace para ver tu solicitud.'),
   ).toBeVisible();
-  await expect(dialog.getByText('No te enviamos ningún mensaje', {exact: false})).toHaveCount(0);
+  // The private link carries its token in the fragment, never in the path.
+  await expect(page.getByRole('link', {name: 'Ver mi reservación'})).toHaveAttribute(
+    'href',
+    /\/reservacion\/#[A-Za-z0-9_-]{43}$/,
+  );
   await page.getByRole('link', {name: 'Ver mi reservación'}).click();
   const door = page.locator('[data-door-number]');
   await expect(door.getByText('Tu número para la entrada')).toBeVisible();
   await expect(door.getByText(/^PAP-[A-Z0-9]{6}$/)).toBeVisible();
-  await expect(door.getByText('Te enviamos tu número por texto al ••• 0142.')).toBeVisible();
-  await release(page, name);
-});
-
-test('without the guest asking, no text is sent and the receipt says no message was sent', async ({page}, info) => {
-  await page.goto('/funciones/demo-prueba-a/');
-  await page.getByRole('button', {name: 'Reservar plazas'}).click();
-  await toContact(page);
-  const dialog = page.getByRole('dialog');
-  const name = `Cliente e2e sin texto ${info.project.name}`;
-  await dialog.getByLabel('Nombre de quien reserva').fill(name);
-  await dialog.getByRole('textbox', {name: 'Teléfono'}).fill('787-555-0143');
-  await expect(dialog.getByRole('checkbox', {name: /por texto/})).not.toBeChecked();
-  await dialog.getByRole('button', {name: 'Continuar'}).click();
-  await dialog.getByRole('checkbox', {name: 'Acepto estas condiciones.'}).check();
-  await dialog.getByRole('button', {name: 'Reservar plazas'}).click();
-  await expect(dialog.getByRole('heading', {name: 'Reservación confirmada'})).toBeVisible();
-  await expect(
-    dialog.getByText('No te enviamos ningún mensaje. Guarda este enlace para ver tu solicitud.'),
-  ).toBeVisible();
   await release(page, name);
 });
 
@@ -202,9 +183,6 @@ test('a guest without a reservation gets a number at the door when seats remain'
   await sheet
     .getByLabel('Contacto', {exact: true})
     .fill(info.project.name === 'desktop' ? '787-555-0177' : '787-555-0178');
-  await sheet
-    .getByRole('checkbox', {name: 'El cliente aceptó recibir su número por texto cuando se confirme.'})
-    .check();
   // The terms must be accepted in person first.
   await sheet.getByRole('button', {name: 'Registrar y dar número'}).click();
   await expect(sheet.getByText('Confirma que el cliente aceptó las condiciones.')).toBeVisible();
@@ -213,12 +191,94 @@ test('a guest without a reservation gets a number at the door when seats remain'
   const result = sheet.locator('[data-walk-in-result]');
   await expect(result.getByText('Número para la entrada')).toBeVisible();
   await expect(result.getByText(/^PAP-[A-Z0-9]{6}$/)).toBeVisible();
-  await expect(result.getByText(/^Confirmada\. Llegada registrada a las /)).toBeVisible();
-  await expect(result.getByText(/^Número enviado por texto a ••• 01(77|78)\.$/)).toBeVisible();
+  // The time in parentheses, so a Spanish "p. m." never runs into the sentence's own period.
+  await expect(result.getByText(/^Confirmada\. Llegada registrada \(\d{1,2}:\d{2}\s[ap]\.\sm\.\)\.$/)).toBeVisible();
   await sheet.getByRole('button', {name: 'Listo'}).click();
   // Their booking is on tonight's list, already arrived.
   await page.getByRole('searchbox', {name: 'Número, nombre o teléfono'}).fill(name);
   await expect(page.getByRole('link', {name})).toBeVisible();
   await expect(page.getByText(/^Llegó a las /)).toBeVisible();
   await release(page, name);
+});
+
+test('the private link keeps its token out of every request, and older links still open', async ({page}, info) => {
+  // A reservation through the API, with a known token.
+  const token = randomBytes(32).toString('base64url');
+  const {session} = await (await page.request.get('/api/public/sessions/demo-prueba-a')).json();
+  const name = `Cliente e2e enlace ${info.project.name}`;
+  const made = await page.request.post('/api/public/bookings', {
+    headers: {'Idempotency-Key': randomUUID(), Origin: 'http://127.0.0.1:8788'},
+    data: {
+      intent: 'reserve',
+      sessionId: 'demo-prueba-a',
+      partySize: 1,
+      leadName: name,
+      contactKind: 'email',
+      contactValue: `enlace-${info.project.name}@example.com`,
+      note: null,
+      token,
+      terms: {
+        policyVersionId: session.terms.policyVersionId,
+        priceStatus: session.terms.priceStatus,
+        unitPriceCents: session.terms.unitPriceCents,
+        currency: session.terms.currency,
+      },
+      acceptedTerms: true,
+    },
+  });
+  expect(made.status()).toBe(200);
+  // Every URL the page asks the server for: the token may go in a request body, never in a URL.
+  const urls: string[] = [];
+  page.on('request', request => urls.push(request.url()));
+  await page.goto(`/reservacion/#${token}`);
+  await expect(page.getByRole('heading', {level: 1, name: 'Tu reservación'})).toBeVisible();
+  await expect(page.locator('[data-door-number]')).toBeVisible();
+  expect(urls.filter(url => url.includes(token))).toEqual([]);
+  // An older link with the token in the path still opens, and the address bar drops it to the fragment.
+  await page.goto(`/reservacion/${token}/`);
+  await expect(page.getByRole('heading', {level: 1, name: 'Tu reservación'})).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe('/reservacion/');
+  expect(new URL(page.url()).hash).toBe(`#${token}`);
+  await release(page, name);
+});
+
+test('after a refused submit, keyboard focus stays on the button that sent it', async ({page}) => {
+  // The server refuses the reservation (as when the last seats went to someone else).
+  await page.route('**/api/public/bookings', route =>
+    route.fulfill({status: 409, json: {ok: false, error: 'no_seats', replayed: false}}),
+  );
+  await page.goto('/funciones/demo-prueba-a/');
+  await page.getByRole('button', {name: 'Reservar plazas'}).click();
+  await toContact(page);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Nombre de quien reserva').fill('Cliente e2e foco');
+  await dialog.getByRole('textbox', {name: 'Teléfono'}).fill('787-555-0149');
+  await dialog.getByRole('button', {name: 'Continuar'}).click();
+  await dialog.getByRole('checkbox', {name: 'Acepto estas condiciones.'}).check();
+  const submit = dialog.getByRole('button', {name: 'Reservar plazas'});
+  await submit.focus();
+  await page.keyboard.press('Enter');
+  await expect(dialog.getByRole('alert')).toContainText('Ya no quedan plazas suficientes');
+  // Focus never fell to the page: it is still on the button, inside the open sheet.
+  await expect(submit).toBeFocused();
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+});
+
+test('in a staff sheet, a refusal keeps focus on its send button', async ({page}) => {
+  await onShowDay(page);
+  await page.route('**/api/equipo/walk-ins', route =>
+    route.fulfill({status: 409, json: {ok: false, error: 'no_seats', replayed: false}}),
+  );
+  await page.goto('/equipo/esta-noche/');
+  await page.getByRole('button', {name: 'Llegó sin reservación'}).first().click();
+  const sheet = page.getByRole('dialog', {name: 'Llegada sin reservación'});
+  await sheet.getByLabel('Personas', {exact: true}).fill('1');
+  await sheet.getByLabel('Nombre', {exact: true}).fill('Cliente e2e foco equipo');
+  await sheet.getByLabel('Contacto', {exact: true}).fill('787-555-0150');
+  await sheet.getByRole('checkbox', {name: 'El cliente leyó y aceptó estas condiciones en persona.'}).check();
+  const send = sheet.getByRole('button', {name: 'Registrar y dar número'});
+  await send.focus();
+  await page.keyboard.press('Enter');
+  await expect(sheet.getByText('No hay plazas suficientes.')).toBeVisible();
+  await expect(send).toBeFocused();
 });

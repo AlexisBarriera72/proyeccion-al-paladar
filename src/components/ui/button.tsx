@@ -38,10 +38,17 @@ type Props = Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
   'onDrag' | 'onDragStart' | 'onDragEnd' | 'onAnimationStart' | 'onAnimationEnd'
 > &
-  VariantProps<typeof buttonVariants>;
+  VariantProps<typeof buttonVariants> & {
+    /**
+     * A request is running. The button looks unavailable and ignores presses (and a form's Enter),
+     * but it keeps focus: a disabled button would drop keyboard focus to the page, and a refusal
+     * would then leave the person nowhere.
+     */
+    busy?: boolean;
+  };
 
 export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
-  {className, variant, width, type = 'button', disabled, ...props},
+  {className, variant, width, type = 'button', disabled, busy, onClick, ...props},
   ref,
 ) {
   const tap = useTap();
@@ -50,8 +57,11 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
       ref={ref}
       type={type}
       disabled={disabled}
-      whileTap={disabled ? undefined : tap}
-      className={cn(buttonVariants({variant, width}), className)}
+      aria-disabled={busy || undefined}
+      aria-busy={busy || undefined}
+      whileTap={disabled || busy ? undefined : tap}
+      onClick={busy ? event => event.preventDefault() : onClick}
+      className={cn(buttonVariants({variant, width}), busy && 'cursor-not-allowed opacity-60', className)}
       {...props}
     />
   );
